@@ -32,6 +32,35 @@ while [ "$1" != "" ]; do
     shift
 done
 
+# Check if variables are populated
+if [ -z "$FACTORY_IMAGE" ]; then
+  echo "Factory image not passed to script! Use --factory-image to pass a path to a factory image"
+  exit 1
+fi
+if [ -z "$ALTOS_IMAGE" ]; then
+  echo "altOS image not passed to script! Use --altos-image to pass a path to a factory image"
+  exit 1
+fi
+if [ -z "$ALTOS_KEY" ]; then
+  echo "altOS verity key not passed to script! This is expected on pre-AVB2 devices, but this will cause a bootloop on AVB2 devices (Pixel 2 and later). Use --altos-verity-key to pass a path to a factory image"
+  read -p "Press enter to continue anyway"
+fi
+
+# Check if files passed in exist
+for FILE in $FACTORY_IMAGE $ALTOS_IMAGE; do
+  if [ ! -f "$FILE" ]; then
+    echo "$FILE does not exist"
+    exit 1
+  fi
+done
+if [ ! -z "$ALTOS_KEY" ]; then
+  if [ ! -f "$ALTOS_KEY" ]; then
+    echo "$ALTOS_KEY does not exist"
+    exit 1
+  fi
+fi
+
+# Check if fastboot is new enough
 if ! grep -q partition-exists $(which fastboot); then
   echo "fastboot too old; please download the latest version at https://developer.android.com/studio/releases/platform-tools.html"
   exit 1
@@ -43,13 +72,13 @@ tmpdir=$(mktemp -d)
 # Extract images into staging directory
 unzip -d ${tmpdir}/factory $FACTORY_IMAGE
 
+# Guide user through enabling settings to unlock their phone
 echo "Enable Developer Options on device (Settings -> About Phone -> tap \"Build number\" 7 times)"
 read -p "Press enter to continue"
 echo "Enable USB debugging on device (Settings -> System -> Advanced -> Developer Options) and allow the computer to debug (hit \"OK\" on the popup when USB is connected)"
 read -p "Press enter to continue"
 echo "Enable OEM Unlocking (in the same Developer Options menu)"
 read -p "Press enter to continue"
-
 adb reboot bootloader
 sleep 5
 
@@ -75,7 +104,7 @@ sleep 5
 # Flash altOS image
 echo "Installing altOS..."
 fastboot --skip-reboot update $ALTOS_IMAGE
-# Flash custom AVB key if passes to script (Some devices don't have this, so only do it on ones that do)
+# Flash custom AVB key if passed to script (Some devices don't have this, so only do it on ones that do)
 if [ ! -z "$ALTOS_KEY" ]; then
   fastboot flash avb_custom_key $ALTOS_KEY
 fi
