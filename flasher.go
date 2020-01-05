@@ -31,6 +31,10 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	flashDevices()
+}
+
+func flashDevices() {
 	platformToolCommand := *adb
 	platformToolCommand.Args = append(adb.Args, "devices")
 	output, _ := platformToolCommand.Output()
@@ -44,7 +48,7 @@ func main() {
 		go func(device string) {
 			defer wg.Done()
 			log.Println("Flashing device " + device)
-			err = exec.Command("." + string(os.PathSeparator) + "flasher.sh", "-s " + device).Run()
+			err := exec.Command("." + string(os.PathSeparator) + "flasher.sh", "-s " + device).Run()
 			if err != nil {
 				log.Println("Flashing failed for device " + device + " with error: " + err.Error())
 			}
