@@ -4,12 +4,14 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 const OS = runtime.GOOS
@@ -28,18 +30,28 @@ func main() {
 			fmt.Println("Cannot continue without Android platform tools. Exiting...")
 			os.Exit(1)
 		}
-		cwd, _ := os.Executable()
-		cwd = filepath.Dir(cwd)
-		platformToolsPath := cwd + string(os.PathSeparator) + "platform-tools" + string(os.PathSeparator)
-		adbPath := platformToolsPath + "adb"
-		fastbootPath := platformToolsPath + "fastboot"
-		if OS == "windows" {
-			adbPath += ".exe"
-			fastbootPath += ".exe"
-		}
-		adb = exec.Command(adbPath)
-		fastboot = exec.Command(fastbootPath)
 	}
+	platformToolCommand := *adb
+	platformToolCommand.Args = append(adb.Args, "devices")
+	output, _ := platformToolCommand.Output()
+	devices := strings.Split(string(output), "\n")
+	devices = devices[1:len(devices)-2]
+	var wg sync.WaitGroup
+	for i, device := range devices {
+		wg.Add(1)
+		device = strings.Split(device, "\t")[0]
+		devices[i] = device
+		go func(device string) {
+			defer wg.Done()
+			log.Println("Flashing device " + device)
+			err = exec.Command("." + string(os.PathSeparator) + "flasher.sh", "-s " + device).Run()
+			if err != nil {
+				log.Println("Flashing failed for device " + device + " with error: " + err.Error())
+			}
+		}(device)
+	}
+	wg.Wait()
+	fmt.Println("Done")
 }
 
 func getPlatformTools() error {
@@ -47,8 +59,18 @@ func getPlatformTools() error {
 	if err != nil {
 		return err
 	}
-	dest, err := os.Executable()
-	err = extractZip(PLATFORM_TOOLS_ZIP, filepath.Dir(dest))
+	cwd, err := os.Executable()
+	cwd = filepath.Dir(cwd)
+	err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
+	platformToolsPath := cwd + string(os.PathSeparator) + "platform-tools" + string(os.PathSeparator)
+	adbPath := platformToolsPath + "adb"
+	fastbootPath := platformToolsPath + "fastboot"
+	if OS == "windows" {
+		adbPath += ".exe"
+		fastbootPath += ".exe"
+	}
+	adb = exec.Command(adbPath)
+	fastboot = exec.Command(fastbootPath)
 	return err
 }
 
