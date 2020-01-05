@@ -4,11 +4,14 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -19,6 +22,8 @@ const PLATFORM_TOOLS_ZIP = "platform-tools-latest-" + OS + ".zip"
 
 var adb = exec.Command("adb")
 var fastboot = exec.Command("fastboot")
+
+var devices []string
 
 func main() {
 	err := checkPlatformTools()
@@ -31,24 +36,64 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	getDevices()
+	err = getFactoryImage()
+	if err != nil {
+
+	}
 	flashDevices()
 }
 
-func flashDevices() {
+func getDevices() {
 	platformToolCommand := *adb
 	platformToolCommand.Args = append(adb.Args, "devices")
 	output, _ := platformToolCommand.Output()
-	devices := strings.Split(string(output), "\n")
-	devices = devices[1:len(devices)-2]
-	var wg sync.WaitGroup
+	devices = strings.Split(string(output), "\n")
+	devices = devices[1 : len(devices)-2]
 	for i, device := range devices {
-		wg.Add(1)
 		device = strings.Split(device, "\t")[0]
 		devices[i] = device
+	}
+}
+
+func getFactoryImage() error {
+	platformToolCommand := *adb
+	platformToolCommand.Args = append(adb.Args, "-s", devices[0], "shell", "getprop", "|", "grep", "ro.product.device", "|", "awk", "'{print $2}'")
+	out, err := platformToolCommand.Output()
+	device := string(out)
+	device = strings.Trim(device, "[]\n")
+	if device == "" {
+		return err
+	}
+	resp, err := http.Get("https://developers.google.com/android/images/index.html")
+	if err != nil {
+		return err
+	}
+	out, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	body := string(out)
+	device = "sargo"
+	links := regexp.MustCompile("http.*("+device+"-p).*([0-9]{3}-).*(.zip)").FindAllString(body, -1)
+	link := links[len(links)-1]
+	err = downloadFile(link, "factory-image.zip")
+	if err != nil {
+		return err
+	}
+	cwd, _ := os.Executable()
+	cwd = filepath.Dir(cwd)
+	err = extractZip("factory-image.zip", cwd)
+	return nil
+}
+
+func flashDevices() {
+	var wg sync.WaitGroup
+	for _, device := range devices {
 		go func(device string) {
 			defer wg.Done()
 			log.Println("Flashing device " + device)
-			err := exec.Command("." + string(os.PathSeparator) + "flasher.sh", "-s " + device).Run()
+			err := exec.Command("."+string(os.PathSeparator)+"flasher.sh", "-s "+device).Run()
 			if err != nil {
 				log.Println("Flashing failed for device " + device + " with error: " + err.Error())
 			}
@@ -63,7 +108,7 @@ func getPlatformTools() error {
 	if err != nil {
 		return err
 	}
-	cwd, err := os.Executable()
+	cwd, _ := os.Executable()
 	cwd = filepath.Dir(cwd)
 	err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
 	platformToolsPath := cwd + string(os.PathSeparator) + "platform-tools" + string(os.PathSeparator)
@@ -141,6 +186,47 @@ func extractZip(src, dest string) error {
 	return nil
 }
 
+type WriteCounter struct {
+	Total uint64
+}
+
+func (wc *WriteCounter) Write(p []byte) (int, error) {
+	n := len(p)
+	wc.Total += uint64(n)
+	wc.PrintProgress()
+	return n, nil
+}
+
+func (wc WriteCounter) PrintProgress() {
+	fmt.Printf("\r%s", strings.Repeat(" ", 35))
+	fmt.Printf("\rDownloading... %s downloaded", Bytes(wc.Total))
+}
+
+func logn(n, b float64) float64 {
+	return math.Log(n) / math.Log(b)
+}
+
+func humanateBytes(s uint64, base float64, sizes []string) string {
+	if s < 10 {
+		return fmt.Sprintf("%d B", s)
+	}
+	e := math.Floor(logn(float64(s), base))
+	suffix := sizes[int(e)]
+	val := math.Floor(float64(s)/math.Pow(base, e)*10+0.5) / 10
+	f := "%.0f %s"
+	if val < 10 {
+		f = "%.1f %s"
+	}
+
+	return fmt.Sprintf(f, val, suffix)
+}
+
+
+func Bytes(s uint64) string {
+	sizes := []string{"B", "kB", "MB", "GB", "TB", "PB", "EB"}
+	return humanateBytes(s, 1000, sizes)
+}
+
 func downloadFile(url, path string) error {
 	resp, err := http.Get(url)
 	if err != nil {
@@ -154,7 +240,8 @@ func downloadFile(url, path string) error {
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, resp.Body)
+	counter := &WriteCounter{}
+	_, err = io.Copy(out, io.TeeReader(resp.Body, counter))
 	return err
 }
 
