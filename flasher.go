@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -15,8 +16,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var executable, _ = os.Executable()
@@ -28,9 +31,12 @@ const PLATFORM_TOOLS_ZIP = "platform-tools-latest-" + OS + ".zip"
 var adb = exec.Command("adb")
 var fastboot = exec.Command("fastboot")
 
+var input string
+
 var factoryImage string
 var altosImage string
 var altosKey string
+var avbVersion float64
 var devices []string
 
 func main() {
@@ -61,7 +67,7 @@ func main() {
 	}
 	err = checkPlatformTools()
 	if err != nil {
-		fmt.Println("There are missing Android platform tools in PATH. Attempting to download them from https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
+		fmt.Println("There are missing Android platform tools in PATH. Attempting to download https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
 		err := getPlatformTools()
 		if err != nil {
 			fmt.Println(err.Error())
@@ -70,6 +76,12 @@ func main() {
 		}
 	}
 	getDevices()
+	avbVersion, err = strconv.ParseFloat(getProp("ro.boot.avb_version"), 64)
+	if err != nil {
+		fmt.Println(err.Error())
+		fmt.Println("Cannot determine AVB version. Exiting...")
+		os.Exit(1)
+	}
 	if factoryImage == "" {
 		fmt.Println("Factory image missing. Attempting to download from https://developers.google.com/android/images/index.html")
 		err = getFactoryImage()
@@ -78,6 +90,12 @@ func main() {
 			fmt.Println("Cannot continue without the device factory image. Exiting...")
 			os.Exit(1)
 		}
+	}
+	err = extractZip(cwd+string(os.PathSeparator)+factoryImage, cwd)
+	if err != nil {
+		fmt.Println(err.Error())
+		fmt.Println("Cannot continue without the device factory image. Exiting...")
+		os.Exit(1)
 	}
 	flashDevices()
 }
@@ -95,19 +113,15 @@ func getDevices() {
 }
 
 func getFactoryImage() error {
-	platformToolCommand := *adb
-	platformToolCommand.Args = append(adb.Args, "-s", devices[0], "shell", "getprop", "|", "grep", "ro.product.device", "|", "awk", "'{print $2}'")
-	out, err := platformToolCommand.Output()
-	device := string(out)
-	device = strings.Trim(device, "[]\n")
+	device := getProp("ro.product.device")
 	if device == "" {
-		return err
+		return errors.New("could not find prop ro.product.device")
 	}
 	resp, err := http.Get("https://developers.google.com/android/images/index.html")
 	if err != nil {
 		return err
 	}
-	out, err = ioutil.ReadAll(resp.Body)
+	out, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
@@ -125,24 +139,152 @@ func getFactoryImage() error {
 	if err != nil {
 		return err
 	}
-	err = extractZip(factoryImage, cwd)
 	return nil
 }
 
+func getProp(prop string) string {
+	platformToolCommand := *adb
+	platformToolCommand.Args = append(adb.Args, "-s", devices[0], "shell", "getprop", "|", "grep", prop, "|", "awk", "'{print $2}'")
+	out, err := platformToolCommand.Output()
+	if err != nil {
+		return ""
+	}
+	prop = string(out)
+	prop = strings.Trim(prop, "[]\n")
+	return prop
+}
+
 func flashDevices() {
+	fmt.Println("Do the following for each device:")
+	fmt.Println("Enable Developer Options on device (Settings -> About Phone -> tap \"Build number\" 7 times)")
+	fmt.Println("Enable USB debugging on device (Settings -> System -> Advanced -> Developer Options) and allow the computer to debug (hit \"OK\" on the popup when USB is connected)")
+	fmt.Println("Enable OEM Unlocking (in the same Developer Options menu)")
+	fmt.Print("When done, press enter to continue")
+	_, _ = fmt.Scanln(&input)
+	for _, device := range devices {
+		platformToolCommand := *adb
+		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot", "bootloader")
+		err := platformToolCommand.Run()
+		if err != nil {
+			log.Println(err.Error())
+			return
+		}
+		time.Sleep(5 * time.Second)
+		fmt.Println("Unlocking device " + device + " bootloader...")
+		fmt.Println("Please use the volume and power keys on the device to confirm.")
+		platformToolCommand = *fastboot
+		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "flashing_unlock")
+		err = platformToolCommand.Run()
+		if err != nil {
+			log.Println(err.Error())
+			return
+		}
+		time.Sleep(5 * time.Second)
+		fmt.Print("Press enter to continue")
+		_, _ = fmt.Scanln(&input)
+	}
 	var wg sync.WaitGroup
 	for _, device := range devices {
+		wg.Add(1)
 		go func(device string) {
 			defer wg.Done()
-			log.Println("Flashing device " + device)
-			err := exec.Command("."+string(os.PathSeparator)+"flasher.sh", "-s "+device).Run()
+			fmt.Println("Flashing stock firmware on device " + device + "...")
+			platformToolCommand := *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
+			err := platformToolCommand.Run()
 			if err != nil {
-				log.Println("Flashing failed for device " + device + " with error: " + err.Error())
+				log.Println(err.Error())
+				return
+			}
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+			err = platformToolCommand.Run()
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			time.Sleep(5 * time.Second)
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
+			err = platformToolCommand.Run()
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+			err = platformToolCommand.Run()
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			time.Sleep(5 * time.Second)
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", image)
+			err = platformToolCommand.Run()
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+			err = platformToolCommand.Run()
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			time.Sleep(5 * time.Second)
+			fmt.Println("Flashing altOS on device " + device)
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", altosImage)
+			err = platformToolCommand.Run()
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			if altosKey != "" {
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash avb_custom_key", altosKey)
+				err = platformToolCommand.Run()
+				if err != nil {
+					log.Println(err.Error())
+					return
+				}
+			}
+			fmt.Println("Wiping userdata for device " + device + "...")
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "-w", "reboot-bootloader")
+			err = platformToolCommand.Run()
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			time.Sleep(5 * time.Second)
+			if avbVersion < 2 {
+				fmt.Println("Done flashing device " + device + "... Rebooting")
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot")
+				err = platformToolCommand.Run()
+				if err != nil {
+					log.Println(err.Error())
+					return
+				}
 			}
 		}(device)
 	}
 	wg.Wait()
-	fmt.Println("Done")
+	if avbVersion >= 2 {
+		for _, device := range devices {
+			platformToolCommand := *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
+			err := platformToolCommand.Run()
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+		}
+	}
+	fmt.Println("Bulk flashing complete")
 }
 
 func getPlatformTools() error {
@@ -281,6 +423,7 @@ func downloadFile(url, path string) error {
 
 	counter := &WriteCounter{}
 	_, err = io.Copy(out, io.TeeReader(resp.Body, counter))
+	fmt.Println()
 	return err
 }
 
