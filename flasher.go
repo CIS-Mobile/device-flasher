@@ -8,8 +8,10 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -17,16 +19,47 @@ import (
 	"sync"
 )
 
+var executable, _ = os.Executable()
+var cwd = filepath.Dir(executable)
+
 const OS = runtime.GOOS
 const PLATFORM_TOOLS_ZIP = "platform-tools-latest-" + OS + ".zip"
 
 var adb = exec.Command("adb")
 var fastboot = exec.Command("fastboot")
 
+var factoryImage string
+var altosImage string
+var altosKey string
 var devices []string
 
 func main() {
-	err := checkPlatformTools()
+	files, err := ioutil.ReadDir(cwd)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+	for _, file := range files {
+		file := file.Name()
+		if strings.HasSuffix(file, ".zip") {
+			if strings.Contains(file, "factory") {
+				factoryImage = file
+				continue
+			}
+			if strings.Contains(file, "altos-") {
+				altosImage = file
+				continue
+			}
+		} else if strings.HasSuffix(file, ".bin") {
+			altosKey = file
+			continue
+		}
+	}
+	if altosImage == "" {
+		fmt.Println("Cannot continue without altOS device image")
+		os.Exit(1)
+	}
+	err = checkPlatformTools()
 	if err != nil {
 		fmt.Println("There are missing Android platform tools in PATH. Attempting to download them from https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
 		err := getPlatformTools()
@@ -37,9 +70,14 @@ func main() {
 		}
 	}
 	getDevices()
-	err = getFactoryImage()
-	if err != nil {
-
+	if factoryImage == "" {
+		fmt.Println("Factory image missing. Attempting to download from https://developers.google.com/android/images/index.html")
+		err = getFactoryImage()
+		if err != nil {
+			fmt.Println(err.Error())
+			fmt.Println("Cannot continue without the device factory image. Exiting...")
+			os.Exit(1)
+		}
 	}
 	flashDevices()
 }
@@ -74,16 +112,20 @@ func getFactoryImage() error {
 		return err
 	}
 	body := string(out)
+	//TODO remove device = sargo
 	device = "sargo"
 	links := regexp.MustCompile("http.*("+device+"-p).*([0-9]{3}-).*(.zip)").FindAllString(body, -1)
 	link := links[len(links)-1]
-	err = downloadFile(link, "factory-image.zip")
+	_, err = url.ParseRequestURI(link)
 	if err != nil {
 		return err
 	}
-	cwd, _ := os.Executable()
-	cwd = filepath.Dir(cwd)
-	err = extractZip("factory-image.zip", cwd)
+	factoryImage = path.Base(link)
+	err = downloadFile(link, factoryImage)
+	if err != nil {
+		return err
+	}
+	err = extractZip(factoryImage, cwd)
 	return nil
 }
 
@@ -108,8 +150,6 @@ func getPlatformTools() error {
 	if err != nil {
 		return err
 	}
-	cwd, _ := os.Executable()
-	cwd = filepath.Dir(cwd)
 	err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
 	platformToolsPath := cwd + string(os.PathSeparator) + "platform-tools" + string(os.PathSeparator)
 	adbPath := platformToolsPath + "adb"
@@ -220,7 +260,6 @@ func humanateBytes(s uint64, base float64, sizes []string) string {
 
 	return fmt.Sprintf(f, val, suffix)
 }
-
 
 func Bytes(s uint64) string {
 	sizes := []string{"B", "kB", "MB", "GB", "TB", "PB", "EB"}
