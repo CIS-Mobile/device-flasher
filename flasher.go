@@ -45,7 +45,6 @@ func main() {
 	checkPrerequisiteFiles()
 	err := checkPlatformTools()
 	if err != nil {
-		fmt.Println("There are missing Android platform tools in PATH. Attempting to download https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
 		err := getPlatformTools()
 		if err != nil {
 			fmt.Println(err.Error())
@@ -188,6 +187,13 @@ func flashDevices() {
 			log.Println(err.Error())
 			return
 		}
+		platformToolCommand = *adb
+		platformToolCommand.Args = append(platformToolCommand.Args, "kill-server")
+		err = platformToolCommand.Run()
+		if err != nil {
+			log.Println(err.Error())
+			return
+		}
 		time.Sleep(5 * time.Second)
 		fmt.Println("Unlocking device " + device + " bootloader...")
 		fmt.Println("Please use the volume and power keys on the device to confirm.")
@@ -289,13 +295,13 @@ func flashDevices() {
 	if altosKey != "" && avbVersion != "" {
 		for _, device := range devices {
 			platformToolCommand := *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash avb_custom_key", altosKey)
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
 			err := platformToolCommand.Run()
 			if err != nil {
 				log.Println(err.Error())
 				return
 			}
-			fmt.Println("Unlocking device " + device + " bootloader...")
+			fmt.Println("Locking device " + device + " bootloader...")
 			fmt.Println("Please use the volume and power keys on the device to confirm.")
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
@@ -313,13 +319,17 @@ func flashDevices() {
 }
 
 func getPlatformTools() error {
-	err := downloadFile("https://dl.google.com/android/repository/"+PLATFORM_TOOLS_ZIP, PLATFORM_TOOLS_ZIP)
+	err := extractZip(PLATFORM_TOOLS_ZIP, cwd)
 	if err != nil {
-		return err
-	}
-	err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
-	if err != nil {
-		return err
+		fmt.Println("There are missing Android platform tools in PATH. Attempting to download https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
+		err = downloadFile("https://dl.google.com/android/repository/"+PLATFORM_TOOLS_ZIP, PLATFORM_TOOLS_ZIP)
+		if err != nil {
+			return err
+		}
+		err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
+		if err != nil {
+			return err
+		}
 	}
 	platformToolsPath := cwd + string(os.PathSeparator) + "platform-tools" + string(os.PathSeparator)
 	adbPath := platformToolsPath + "adb"
