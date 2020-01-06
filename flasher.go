@@ -34,6 +34,9 @@ var fastboot = exec.Command("fastboot")
 var input string
 
 var factoryImage string
+var bootloader string
+var radio string
+var image string
 var altosImage string
 var altosKey string
 var avbVersion float64
@@ -50,15 +53,11 @@ func main() {
 		if strings.HasSuffix(file, ".zip") {
 			if strings.Contains(file, "factory") {
 				factoryImage = file
-				continue
-			}
-			if strings.Contains(file, "altos-") {
+			} else if strings.Contains(file, "-img-") {
 				altosImage = file
-				continue
 			}
 		} else if strings.HasSuffix(file, ".bin") {
 			altosKey = file
-			continue
 		}
 	}
 	if altosImage == "" {
@@ -76,6 +75,10 @@ func main() {
 		}
 	}
 	getDevices()
+	if len(devices) == 0 {
+		fmt.Println("No device connected. Exiting...")
+		os.Exit(1)
+	}
 	avbVersion, err = strconv.ParseFloat(getProp("ro.boot.avb_version"), 64)
 	if err != nil {
 		fmt.Println(err.Error())
@@ -91,11 +94,34 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	err = extractZip(cwd+string(os.PathSeparator)+factoryImage, cwd)
+	err = extractZip(factoryImage, cwd)
 	if err != nil {
 		fmt.Println(err.Error())
 		fmt.Println("Cannot continue without the device factory image. Exiting...")
 		os.Exit(1)
+	}
+	factoryImage = regexp.MustCompile(".*\\.[0-9]{3}").FindAllString(factoryImage, -1)[0]
+	factoryImage = cwd + string(os.PathSeparator) + factoryImage + string(os.PathSeparator)
+	files, err = ioutil.ReadDir(factoryImage)
+	if err != nil {
+		fmt.Println(err.Error())
+		fmt.Println("Cannot continue without the device factory image. Exiting...")
+		os.Exit(1)
+	}
+	for _, file := range files {
+		file := file.Name()
+		if strings.Contains(file, "bootloader") {
+			bootloader, err = filepath.Abs(file)
+		} else if strings.Contains(file, "radio") {
+			radio, err = filepath.Abs(file)
+		} else if strings.Contains(file, "image") {
+			image, err = filepath.Abs(file)
+		}
+		if err != nil {
+			fmt.Println(err.Error())
+			fmt.Println("Cannot continue without the device factory image. Exiting...")
+			os.Exit(1)
+		}
 	}
 	flashDevices()
 }
@@ -126,8 +152,6 @@ func getFactoryImage() error {
 		return err
 	}
 	body := string(out)
-	//TODO remove device = sargo
-	device = "sargo"
 	links := regexp.MustCompile("http.*("+device+"-p).*([0-9]{3}-).*(.zip)").FindAllString(body, -1)
 	link := links[len(links)-1]
 	_, err = url.ParseRequestURI(link)
@@ -288,7 +312,7 @@ func flashDevices() {
 }
 
 func getPlatformTools() error {
-	err := downloadFile("https://dl.google.com/android/repository/platform-tools-latest-"+OS+".zip", PLATFORM_TOOLS_ZIP)
+	err := downloadFile("https://dl.google.com/android/repository/"+PLATFORM_TOOLS_ZIP, PLATFORM_TOOLS_ZIP)
 	if err != nil {
 		return err
 	}
