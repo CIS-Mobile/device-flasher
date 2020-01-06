@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,10 +38,72 @@ var radio string
 var image string
 var altosImage string
 var altosKey string
-var avbVersion float64
+var avbVersion string
 var devices []string
 
 func main() {
+	checkPrerequisiteFiles()
+	err := checkPlatformTools()
+	if err != nil {
+		fmt.Println("There are missing Android platform tools in PATH. Attempting to download https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
+		err := getPlatformTools()
+		if err != nil {
+			fmt.Println(err.Error())
+			fmt.Println("Cannot continue without Android platform tools. Exiting...")
+			os.Exit(1)
+		}
+	}
+
+	fmt.Println("Do the following for each device:")
+	fmt.Println("Enable Developer Options on device (Settings -> About Phone -> tap \"Build number\" 7 times)")
+	fmt.Println("Enable USB debugging on device (Settings -> System -> Advanced -> Developer Options) and allow the computer to debug (hit \"OK\" on the popup when USB is connected)")
+	fmt.Println("Enable OEM Unlocking (in the same Developer Options menu)")
+	fmt.Print("When done, press enter to continue")
+	_, _ = fmt.Scanln(&input)
+
+	getDevices()
+	if len(devices) == 0 {
+		fmt.Println("No device connected. Exiting...")
+		os.Exit(1)
+	}
+	avbVersion = getProp("ro.boot.avb_version")
+	if factoryImage == "" {
+		fmt.Println("Factory image missing. Attempting to download from https://developers.google.com/android/images/index.html")
+		err = getFactoryImage()
+		if err != nil {
+			fmt.Println(err.Error())
+			fmt.Println("Cannot continue without the device factory image. Exiting...")
+			os.Exit(1)
+		}
+	}
+	err = extractZip(factoryImage, cwd)
+	if err != nil {
+		fmt.Println(err.Error())
+		fmt.Println("Cannot continue without the device factory image. Exiting...")
+		os.Exit(1)
+	}
+	factoryImage = regexp.MustCompile(".*\\.[0-9]{3}").FindAllString(factoryImage, -1)[0]
+	factoryImage = cwd + string(os.PathSeparator) + factoryImage + string(os.PathSeparator)
+	files, err := ioutil.ReadDir(factoryImage)
+	if err != nil {
+		fmt.Println(err.Error())
+		fmt.Println("Cannot continue without the device factory image. Exiting...")
+		os.Exit(1)
+	}
+	for _, file := range files {
+		file := file.Name()
+		if strings.Contains(file, "bootloader") {
+			bootloader = factoryImage + file
+		} else if strings.Contains(file, "radio") {
+			radio = factoryImage + file
+		} else if strings.Contains(file, "image") {
+			image = factoryImage + file
+		}
+	}
+	flashDevices()
+}
+
+func checkPrerequisiteFiles() {
 	files, err := ioutil.ReadDir(cwd)
 	if err != nil {
 		fmt.Println(err.Error())
@@ -61,75 +122,9 @@ func main() {
 		}
 	}
 	if altosImage == "" {
-		fmt.Println("Cannot continue without altOS device image")
+		fmt.Println("Cannot continue without altOS device image. Exiting...")
 		os.Exit(1)
 	}
-	err = checkPlatformTools()
-	if err != nil {
-		fmt.Println("There are missing Android platform tools in PATH. Attempting to download https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
-		err := getPlatformTools()
-		if err != nil {
-			fmt.Println(err.Error())
-			fmt.Println("Cannot continue without Android platform tools. Exiting...")
-			os.Exit(1)
-		}
-	}
-	fmt.Println("Do the following for each device:")
-	fmt.Println("Enable Developer Options on device (Settings -> About Phone -> tap \"Build number\" 7 times)")
-	fmt.Println("Enable USB debugging on device (Settings -> System -> Advanced -> Developer Options) and allow the computer to debug (hit \"OK\" on the popup when USB is connected)")
-	fmt.Println("Enable OEM Unlocking (in the same Developer Options menu)")
-	fmt.Print("When done, press enter to continue")
-	_, _ = fmt.Scanln(&input)
-	getDevices()
-	if len(devices) == 0 {
-		fmt.Println("No device connected. Exiting...")
-		os.Exit(1)
-	}
-	avbVersion, err = strconv.ParseFloat(getProp("ro.boot.avb_version"), 64)
-	if err != nil {
-		fmt.Println(err.Error())
-		fmt.Println("Cannot determine AVB version. Exiting...")
-		os.Exit(1)
-	}
-	if factoryImage == "" {
-		fmt.Println("Factory image missing. Attempting to download from https://developers.google.com/android/images/index.html")
-		err = getFactoryImage()
-		if err != nil {
-			fmt.Println(err.Error())
-			fmt.Println("Cannot continue without the device factory image. Exiting...")
-			os.Exit(1)
-		}
-	}
-	err = extractZip(factoryImage, cwd)
-	if err != nil {
-		fmt.Println(err.Error())
-		fmt.Println("Cannot continue without the device factory image. Exiting...")
-		os.Exit(1)
-	}
-	factoryImage = regexp.MustCompile(".*\\.[0-9]{3}").FindAllString(factoryImage, -1)[0]
-	factoryImage = cwd + string(os.PathSeparator) + factoryImage + string(os.PathSeparator)
-	files, err = ioutil.ReadDir(factoryImage)
-	if err != nil {
-		fmt.Println(err.Error())
-		fmt.Println("Cannot continue without the device factory image. Exiting...")
-		os.Exit(1)
-	}
-	for _, file := range files {
-		file := file.Name()
-		if strings.Contains(file, "bootloader") {
-			bootloader, err = filepath.Abs(file)
-		} else if strings.Contains(file, "radio") {
-			radio, err = filepath.Abs(file)
-		} else if strings.Contains(file, "image") {
-			image, err = filepath.Abs(file)
-		}
-		if err != nil {
-			fmt.Println(err.Error())
-			fmt.Println("Cannot continue without the device factory image. Exiting...")
-			os.Exit(1)
-		}
-	}
-	flashDevices()
 }
 
 func getDevices() {
@@ -267,13 +262,7 @@ func flashDevices() {
 				return
 			}
 			if altosKey != "" {
-				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash avb_custom_key", altosKey)
-				err = platformToolCommand.Run()
-				if err != nil {
-					log.Println(err.Error())
-					return
-				}
+
 			}
 			fmt.Println("Wiping userdata for device " + device + "...")
 			platformToolCommand = *fastboot
@@ -284,7 +273,7 @@ func flashDevices() {
 				return
 			}
 			time.Sleep(5 * time.Second)
-			if avbVersion < 2 {
+			if altosKey == "" || avbVersion == "" {
 				fmt.Println("Done flashing device " + device + "... Rebooting")
 				platformToolCommand = *fastboot
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot")
@@ -297,15 +286,27 @@ func flashDevices() {
 		}(device)
 	}
 	wg.Wait()
-	if avbVersion >= 2 {
+	if altosKey != "" && avbVersion != "" {
 		for _, device := range devices {
 			platformToolCommand := *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash avb_custom_key", altosKey)
 			err := platformToolCommand.Run()
 			if err != nil {
 				log.Println(err.Error())
 				return
 			}
+			fmt.Println("Unlocking device " + device + " bootloader...")
+			fmt.Println("Please use the volume and power keys on the device to confirm.")
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
+			err = platformToolCommand.Run()
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			time.Sleep(5 * time.Second)
+			fmt.Print("Press enter to continue")
+			_, _ = fmt.Scanln(&input)
 		}
 	}
 	fmt.Println("Bulk flashing complete")
@@ -317,6 +318,9 @@ func getPlatformTools() error {
 		return err
 	}
 	err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
+	if err != nil {
+		return err
+	}
 	platformToolsPath := cwd + string(os.PathSeparator) + "platform-tools" + string(os.PathSeparator)
 	adbPath := platformToolsPath + "adb"
 	fastbootPath := platformToolsPath + "fastboot"
