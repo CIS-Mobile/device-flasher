@@ -175,7 +175,7 @@ func getProp(prop string) string {
 		return ""
 	}
 	prop = string(out)
-	prop = strings.Trim(prop, "[]\n")
+	prop = strings.Trim(prop, "[]\n\r")
 	return prop
 }
 
