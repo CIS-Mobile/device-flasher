@@ -74,6 +74,12 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	fmt.Println("Do the following for each device:")
+	fmt.Println("Enable Developer Options on device (Settings -> About Phone -> tap \"Build number\" 7 times)")
+	fmt.Println("Enable USB debugging on device (Settings -> System -> Advanced -> Developer Options) and allow the computer to debug (hit \"OK\" on the popup when USB is connected)")
+	fmt.Println("Enable OEM Unlocking (in the same Developer Options menu)")
+	fmt.Print("When done, press enter to continue")
+	_, _ = fmt.Scanln(&input)
 	getDevices()
 	if len(devices) == 0 {
 		fmt.Println("No device connected. Exiting...")
@@ -179,12 +185,6 @@ func getProp(prop string) string {
 }
 
 func flashDevices() {
-	fmt.Println("Do the following for each device:")
-	fmt.Println("Enable Developer Options on device (Settings -> About Phone -> tap \"Build number\" 7 times)")
-	fmt.Println("Enable USB debugging on device (Settings -> System -> Advanced -> Developer Options) and allow the computer to debug (hit \"OK\" on the popup when USB is connected)")
-	fmt.Println("Enable OEM Unlocking (in the same Developer Options menu)")
-	fmt.Print("When done, press enter to continue")
-	_, _ = fmt.Scanln(&input)
 	for _, device := range devices {
 		platformToolCommand := *adb
 		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot", "bootloader")
@@ -197,7 +197,7 @@ func flashDevices() {
 		fmt.Println("Unlocking device " + device + " bootloader...")
 		fmt.Println("Please use the volume and power keys on the device to confirm.")
 		platformToolCommand = *fastboot
-		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "flashing_unlock")
+		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
 		err = platformToolCommand.Run()
 		if err != nil {
 			log.Println(err.Error())
