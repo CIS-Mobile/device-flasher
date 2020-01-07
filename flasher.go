@@ -52,6 +52,13 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	platformToolCommand := *adb
+	platformToolCommand.Args = append(platformToolCommand.Args, "kill-server")
+	err = platformToolCommand.Run()
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
 
 	fmt.Println("Do the following for each device:")
 	fmt.Println("Enable Developer Options on device (Settings -> About Phone -> tap \"Build number\" 7 times)")
@@ -168,7 +175,7 @@ func getFactoryImage() error {
 
 func getProp(prop string) string {
 	platformToolCommand := *adb
-	platformToolCommand.Args = append(adb.Args, "-s", devices[0], "shell", "getprop", "|", "grep", prop, "|", "awk", "'{print $2}'")
+	platformToolCommand.Args = append(adb.Args, "-s", devices[0], "shell", "getprop", prop)
 	out, err := platformToolCommand.Output()
 	if err != nil {
 		return ""
@@ -183,13 +190,6 @@ func flashDevices() {
 		platformToolCommand := *adb
 		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot", "bootloader")
 		err := platformToolCommand.Run()
-		if err != nil {
-			log.Println(err.Error())
-			return
-		}
-		platformToolCommand = *adb
-		platformToolCommand.Args = append(platformToolCommand.Args, "kill-server")
-		err = platformToolCommand.Run()
 		if err != nil {
 			log.Println(err.Error())
 			return
