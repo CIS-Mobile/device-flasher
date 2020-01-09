@@ -53,23 +53,7 @@ func main() {
 		}
 	}
 	if OS == "linux" {
-		_, err := os.Stat("/etc/udev/rules.d")
-		if os.IsNotExist(err) {
-			err = downloadFile("https://raw.githubusercontent.com/invisiblek/udevrules/master/99-android.rules")
-			if err != nil {
-				fmt.Println(err.Error())
-				fmt.Println("Cannot continue without udev rules. Exiting...")
-				os.Exit(1)
-			}
-			err = exec.Command("sudo", "cp", "99-android.rules", "/etc/udev/rules.d").Run()
-			if err != nil {
-				fmt.Println(err.Error())
-				fmt.Println("Cannot continue without udev rules. Exiting...")
-				os.Exit(1)
-			}
-			_ = exec.Command("sudo", "udevadm", "control", "--reload-rules").Run()
-			_ = exec.Command("sudo", "udevadm", "trigger").Run()
-		}
+		checkUdevRules()
 	}
 	killAdb()
 	fmt.Println("Do the following for each device:")
@@ -190,6 +174,26 @@ func getPlatformTools() error {
 	return err
 }
 
+func checkUdevRules() {
+	_, err := os.Stat("/etc/udev/rules.d")
+	if os.IsNotExist(err) {
+		err = downloadFile("https://raw.githubusercontent.com/invisiblek/udevrules/master/99-android.rules")
+		if err != nil {
+			fmt.Println(err.Error())
+			fmt.Println("Cannot continue without udev rules. Exiting...")
+			os.Exit(1)
+		}
+		err = exec.Command("sudo", "cp", "99-android.rules", "/etc/udev/rules.d").Run()
+		if err != nil {
+			fmt.Println(err.Error())
+			fmt.Println("Cannot continue without udev rules. Exiting...")
+			os.Exit(1)
+		}
+		_ = exec.Command("sudo", "udevadm", "control", "--reload-rules").Run()
+		_ = exec.Command("sudo", "udevadm", "trigger").Run()
+	}
+}
+
 func killAdb() {
 	platformToolCommand := *adb
 	platformToolCommand.Args = append(platformToolCommand.Args, "kill-server")
@@ -257,6 +261,7 @@ func flashDevices() {
 		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot", "bootloader")
 		err := platformToolCommand.Run()
 		if err != nil {
+			fmt.Println("Cannot continue without adb enabled. Exiting...")
 			log.Println(err.Error())
 			return
 		}
