@@ -52,21 +52,29 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	platformToolCommand := *adb
-	platformToolCommand.Args = append(platformToolCommand.Args, "kill-server")
-	err = platformToolCommand.Run()
-	if err != nil {
-		log.Println(err.Error())
-		return
+	if OS == "linux" {
+		err = downloadFile("https://raw.githubusercontent.com/invisiblek/udevrules/master/99-android.rules")
+		if err != nil {
+			fmt.Println(err.Error())
+			fmt.Println("Cannot continue without udev rules. Exiting...")
+			os.Exit(1)
+		}
+		err = exec.Command("sudo", "cp", "99-android.rules", "/etc/udev/rules.d/").Run()
+		if err != nil {
+			fmt.Println(err.Error())
+			fmt.Println("Cannot continue without udev rules. Exiting...")
+			os.Exit(1)
+		}
+		_ = exec.Command("sudo", "udevadm", "control", "--reload-rules").Run()
+		_ = exec.Command("sudo", "udevadm", "trigger").Run()
 	}
-
+	killAdb()
 	fmt.Println("Do the following for each device:")
 	fmt.Println("Enable Developer Options on device (Settings -> About Phone -> tap \"Build number\" 7 times)")
 	fmt.Println("Enable USB debugging on device (Settings -> System -> Advanced -> Developer Options) and allow the computer to debug (hit \"OK\" on the popup when USB is connected)")
 	fmt.Println("Enable OEM Unlocking (in the same Developer Options menu)")
 	fmt.Print("When done, press enter to continue")
 	_, _ = fmt.Scanln(&input)
-
 	getDevices()
 	if len(devices) == 0 {
 		fmt.Println("No device connected. Exiting...")
@@ -81,12 +89,6 @@ func main() {
 			fmt.Println("Cannot continue without the device factory image. Exiting...")
 			os.Exit(1)
 		}
-	}
-	err = extractZip(factoryImage, cwd)
-	if err != nil {
-		fmt.Println(err.Error())
-		fmt.Println("Cannot continue without the device factory image. Exiting...")
-		os.Exit(1)
 	}
 	factoryImage = regexp.MustCompile(".*\\.[0-9]{3}").FindAllString(factoryImage, -1)[0]
 	factoryImage = cwd + string(os.PathSeparator) + factoryImage + string(os.PathSeparator)
@@ -133,6 +135,61 @@ func checkPrerequisiteFiles() {
 	}
 }
 
+func checkPlatformTools() error {
+	err := checkAdb()
+	if err != nil {
+		return err
+	}
+	return checkFastboot()
+}
+
+func checkAdb() error {
+	platformTool := *adb
+	platformTool.Args = append(platformTool.Args, "version")
+	return checkCommand(platformTool)
+}
+
+func checkFastboot() error {
+	platformTool := *fastboot
+	platformTool.Args = append(platformTool.Args, "--version")
+	return checkCommand(platformTool)
+}
+
+func getPlatformTools() error {
+	platformToolsPath := cwd + string(os.PathSeparator) + "platform-tools" + string(os.PathSeparator)
+	adbPath := platformToolsPath + "adb"
+	fastbootPath := platformToolsPath + "fastboot"
+	if OS == "windows" {
+		adbPath += ".exe"
+		fastbootPath += ".exe"
+	}
+	adb = exec.Command(adbPath)
+	fastboot = exec.Command(fastbootPath)
+	killAdb()
+	err := extractZip(PLATFORM_TOOLS_ZIP, cwd)
+	if err != nil {
+		fmt.Println("There are missing Android platform tools in PATH. Attempting to download https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
+		err = downloadFile("https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
+		if err != nil {
+			return err
+		}
+		err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
+		if err != nil {
+			return err
+		}
+	}
+	return err
+}
+
+func killAdb() {
+	platformToolCommand := *adb
+	platformToolCommand.Args = append(platformToolCommand.Args, "kill-server")
+	err := platformToolCommand.Run()
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+}
+
 func getDevices() {
 	platformToolCommand := *adb
 	platformToolCommand.Args = append(adb.Args, "devices")
@@ -160,13 +217,17 @@ func getFactoryImage() error {
 	}
 	body := string(out)
 	links := regexp.MustCompile("http.*("+device+"-p).*([0-9]{3}-).*(.zip)").FindAllString(body, -1)
-	link := links[len(links)-1]
-	_, err = url.ParseRequestURI(link)
+	factoryImage = links[len(links)-1]
+	_, err = url.ParseRequestURI(factoryImage)
 	if err != nil {
 		return err
 	}
-	factoryImage = path.Base(link)
-	err = downloadFile(link, factoryImage)
+	err = downloadFile(factoryImage)
+	if err != nil {
+		return err
+	}
+	factoryImage = path.Base(factoryImage)
+	err = extractZip(path.Base(factoryImage), cwd)
 	if err != nil {
 		return err
 	}
@@ -279,16 +340,6 @@ func flashDevices() {
 				return
 			}
 			time.Sleep(5 * time.Second)
-			if altosKey == "" || avbVersion == "" {
-				fmt.Println("Done flashing device " + device + "... Rebooting")
-				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot")
-				err = platformToolCommand.Run()
-				if err != nil {
-					log.Println(err.Error())
-					return
-				}
-			}
 		}(device)
 	}
 	wg.Wait()
@@ -315,32 +366,21 @@ func flashDevices() {
 			_, _ = fmt.Scanln(&input)
 		}
 	}
+	for _, device := range devices {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fmt.Println("Done flashing device " + device + "... Rebooting")
+			platformToolCommand := *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot")
+			err := platformToolCommand.Run()
+			if err != nil {
+				log.Println(err.Error())
+			}
+		}()
+	}
+	wg.Wait()
 	fmt.Println("Bulk flashing complete")
-}
-
-func getPlatformTools() error {
-	err := extractZip(PLATFORM_TOOLS_ZIP, cwd)
-	if err != nil {
-		fmt.Println("There are missing Android platform tools in PATH. Attempting to download https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
-		err = downloadFile("https://dl.google.com/android/repository/"+PLATFORM_TOOLS_ZIP, PLATFORM_TOOLS_ZIP)
-		if err != nil {
-			return err
-		}
-		err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
-		if err != nil {
-			return err
-		}
-	}
-	platformToolsPath := cwd + string(os.PathSeparator) + "platform-tools" + string(os.PathSeparator)
-	adbPath := platformToolsPath + "adb"
-	fastbootPath := platformToolsPath + "fastboot"
-	if OS == "windows" {
-		adbPath += ".exe"
-		fastbootPath += ".exe"
-	}
-	adb = exec.Command(adbPath)
-	fastboot = exec.Command(fastbootPath)
-	return err
 }
 
 func extractZip(src, dest string) error {
@@ -446,14 +486,14 @@ func Bytes(s uint64) string {
 	return humanateBytes(s, 1000, sizes)
 }
 
-func downloadFile(url, path string) error {
+func downloadFile(url string) error {
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	out, err := os.Create(path)
+	out, err := os.Create(path.Base(url))
 	if err != nil {
 		return err
 	}
@@ -463,26 +503,6 @@ func downloadFile(url, path string) error {
 	_, err = io.Copy(out, io.TeeReader(resp.Body, counter))
 	fmt.Println()
 	return err
-}
-
-func checkPlatformTools() error {
-	err := checkAdb()
-	if err != nil {
-		return err
-	}
-	return checkFastboot()
-}
-
-func checkAdb() error {
-	platformTool := *adb
-	platformTool.Args = append(platformTool.Args, "version")
-	return checkCommand(platformTool)
-}
-
-func checkFastboot() error {
-	platformTool := *fastboot
-	platformTool.Args = append(platformTool.Args, "--version")
-	return checkCommand(platformTool)
 }
 
 func checkCommand(platformTool exec.Cmd) error {
