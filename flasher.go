@@ -345,11 +345,15 @@ func flashDevices() {
 	wg.Wait()
 	if altosKey != "" && avbVersion != "" {
 		for _, device := range devices {
+			fmt.Println("Flashing altOS key on device " + device)
 			platformToolCommand := *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
 			err := platformToolCommand.Run()
 			if err != nil {
+				log.Println("Cannot continue without a signed altOS image. Exiting...")
 				log.Println(err.Error())
+				//TODO consider reflashing stock in this case. We might not want to allow users to boot out system without
+				// a locked bootloader
 				return
 			}
 			fmt.Println("Locking device " + device + " bootloader...")
