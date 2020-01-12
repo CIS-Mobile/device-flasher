@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -32,17 +31,16 @@ var fastboot = exec.Command("fastboot")
 
 var input string
 
+var altosImage string
+var altosKey string
 var factoryImage string
 var bootloader string
 var radio string
 var image string
-var altosImage string
-var altosKey string
-var avbVersion string
+var device string
 var devices []string
 
 func main() {
-	checkPrerequisiteFiles()
 	err := checkPlatformTools()
 	if err != nil {
 		err := getPlatformTools()
@@ -62,12 +60,23 @@ func main() {
 	fmt.Println("Enable OEM Unlocking (in the same Developer Options menu)")
 	fmt.Print("When done, press enter to continue")
 	_, _ = fmt.Scanln(&input)
-	getDevices()
+	getDevices(*adb)
 	if len(devices) == 0 {
-		fmt.Println("No device connected. Exiting...")
-		os.Exit(1)
+		getDevices(*fastboot)
+		if len(devices) == 0 {
+			fmt.Println("No device connected. Exiting...")
+			os.Exit(1)
+		}
 	}
-	avbVersion = getProp("ro.boot.avb_version")
+	device = getProp("ro.product.device")
+	if device == "" {
+		device = getVar("product")
+		if device == "" {
+			fmt.Println("Cannot determine device model. Exiting...")
+			os.Exit(1)
+		}
+	}
+	checkPrerequisiteFiles()
 	if factoryImage == "" {
 		fmt.Println("Factory image missing. Attempting to download from https://developers.google.com/android/images/index.html")
 		err = getFactoryImage()
@@ -112,7 +121,7 @@ func checkPrerequisiteFiles() {
 	}
 	for _, file := range files {
 		file := file.Name()
-		if strings.HasSuffix(file, ".zip") {
+		if strings.Contains(file, device) && strings.HasSuffix(file, ".zip") {
 			if strings.Contains(file, "factory") {
 				factoryImage = file
 			} else if strings.Contains(file, "-img-") {
@@ -124,6 +133,9 @@ func checkPrerequisiteFiles() {
 	}
 	if altosImage == "" {
 		fmt.Println("Cannot continue without altOS device image. Exiting...")
+		os.Exit(1)
+	} else if altosKey == "" {
+		fmt.Println("Cannot continue without altOS key. Exiting...")
 		os.Exit(1)
 	}
 }
@@ -175,15 +187,21 @@ func getPlatformTools() error {
 }
 
 func checkUdevRules() {
-	_, err := os.Stat("/etc/udev/rules.d")
+	_, err := os.Stat("/etc/udev/rules.d/")
 	if os.IsNotExist(err) {
+		err = exec.Command("sudo", "mkdir", "/etc/udev/rules.d/").Run()
+		if err != nil {
+			fmt.Println(err.Error())
+			fmt.Println("Cannot continue without udev rules. Exiting...")
+			os.Exit(1)
+		}
 		err = downloadFile("https://raw.githubusercontent.com/invisiblek/udevrules/master/99-android.rules")
 		if err != nil {
 			fmt.Println(err.Error())
 			fmt.Println("Cannot continue without udev rules. Exiting...")
 			os.Exit(1)
 		}
-		err = exec.Command("sudo", "cp", "99-android.rules", "/etc/udev/rules.d").Run()
+		err = exec.Command("sudo", "cp", "99-android.rules", "/etc/udev/rules.d/").Run()
 		if err != nil {
 			fmt.Println(err.Error())
 			fmt.Println("Cannot continue without udev rules. Exiting...")
@@ -203,15 +221,17 @@ func killAdb() {
 	}
 }
 
-func getDevices() {
-	platformToolCommand := *adb
+func getDevices(platformToolCommand exec.Cmd) {
 	platformToolCommand.Args = append(adb.Args, "devices")
 	output, _ := platformToolCommand.Output()
 	devices = strings.Split(string(output), "\n")
-	devices = devices[1 : len(devices)-2]
+	if platformToolCommand.Path == adb.Path {
+		devices = devices[1 : len(devices)-2]
+	} else if platformToolCommand.Path == fastboot.Path {
+		devices = devices[:len(devices)-1]
+	}
 	for i, device := range devices {
-		device = strings.Split(device, "\t")[0]
-		devices[i] = device
+		devices[i] = strings.Split(device, "\t")[0]
 	}
 }
 
@@ -250,29 +270,32 @@ func getProp(prop string) string {
 	if err != nil {
 		return ""
 	}
-	prop = string(out)
-	prop = strings.Trim(prop, "[]\n\r")
-	return prop
+	return strings.Trim(string(out), "[]\n\r")
+}
+
+func getVar(prop string) string {
+	platformToolCommand := *fastboot
+	platformToolCommand.Args = append(adb.Args, "-s", devices[0], "getvar", prop)
+	out, err := platformToolCommand.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return strings.Trim(strings.Split(strings.Split(string(out), "\n")[0], " ")[1], "\r")
 }
 
 func flashDevices() {
 	for _, device := range devices {
 		platformToolCommand := *adb
 		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot", "bootloader")
-		err := platformToolCommand.Run()
-		if err != nil {
-			fmt.Println("Cannot continue without adb enabled. Exiting...")
-			log.Println(err.Error())
-			return
-		}
+		_ = platformToolCommand.Run()
 		time.Sleep(5 * time.Second)
 		fmt.Println("Unlocking device " + device + " bootloader...")
 		fmt.Println("Please use the volume and power keys on the device to confirm.")
 		platformToolCommand = *fastboot
 		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
-		err = platformToolCommand.Run()
+		err := platformToolCommand.Run()
 		if err != nil {
-			log.Println(err.Error())
+			fmt.Println("Failed to unlock device bootloader. Exiting...")
 			return
 		}
 		time.Sleep(5 * time.Second)
@@ -289,116 +312,89 @@ func flashDevices() {
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
 			err := platformToolCommand.Run()
 			if err != nil {
-				log.Println(err.Error())
+				fmt.Println("Failed to flash stock bootloader on device " + device)
 				return
 			}
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
-			err = platformToolCommand.Run()
-			if err != nil {
-				log.Println(err.Error())
-				return
-			}
+			_ = platformToolCommand.Run()
 			time.Sleep(5 * time.Second)
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
 			err = platformToolCommand.Run()
 			if err != nil {
-				log.Println(err.Error())
+				fmt.Println("Failed to flash stock radio on device " + device)
 				return
 			}
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
-			err = platformToolCommand.Run()
-			if err != nil {
-				log.Println(err.Error())
-				return
-			}
+			_ = platformToolCommand.Run()
 			time.Sleep(5 * time.Second)
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", image)
 			err = platformToolCommand.Run()
 			if err != nil {
-				log.Println(err.Error())
+				fmt.Println("Failed to flash stock image on device " + device)
 				return
 			}
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
-			err = platformToolCommand.Run()
-			if err != nil {
-				log.Println(err.Error())
-				return
-			}
+			_ = platformToolCommand.Run()
 			time.Sleep(5 * time.Second)
-			fmt.Println("Flashing altOS on device " + device)
+			fmt.Println("Flashing altOS on device " + device + "...")
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", altosImage)
 			err = platformToolCommand.Run()
 			if err != nil {
-				log.Println(err.Error())
+				fmt.Println("Failed to flash altOS on device " + device)
 				return
-			}
-			if altosKey != "" {
-
 			}
 			fmt.Println("Wiping userdata for device " + device + "...")
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "-w", "reboot-bootloader")
 			err = platformToolCommand.Run()
 			if err != nil {
-				log.Println(err.Error())
+				fmt.Println("Failed to wipe userdata for device " + device)
 				return
 			}
 			time.Sleep(5 * time.Second)
 		}(device)
 	}
 	wg.Wait()
-	if altosKey != "" && avbVersion != "" {
-		for _, device := range devices {
-			platformToolCommand := *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
-			err := platformToolCommand.Run()
-			if err != nil {
-				log.Println(err.Error())
-				return
-			}
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
-			err = platformToolCommand.Run()
-			if err != nil {
-				log.Println(err.Error())
-				//TODO consider reflashing stock in this case. We might not want to allow users to boot out system without
-				// a locked bootloader
-				return
-			}
-			fmt.Println("Locking device " + device + " bootloader...")
-			fmt.Println("Please use the volume and power keys on the device to confirm.")
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
-			err = platformToolCommand.Run()
-			if err != nil {
-				log.Println(err.Error())
-				return
-			}
-			time.Sleep(5 * time.Second)
-			fmt.Print("Press enter to continue")
-			_, _ = fmt.Scanln(&input)
+	for _, device := range devices {
+		fmt.Println("Locking device " + device + " bootloader...")
+		platformToolCommand := *fastboot
+		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
+		err := platformToolCommand.Run()
+		if err != nil {
+			fmt.Println("Failed to erase avb_custom_key. Exiting...")
+			return
 		}
+		platformToolCommand = *fastboot
+		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
+		err = platformToolCommand.Run()
+		if err != nil {
+			fmt.Println("Failed to flash avb_custom_key. Exiting...")
+			return
+		}
+		fmt.Println("Please use the volume and power keys on the device to confirm.")
+		platformToolCommand = *fastboot
+		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
+		err = platformToolCommand.Run()
+		if err != nil {
+			fmt.Println("Failed to lock device bootloader. Exiting...")
+			return
+		}
+		time.Sleep(5 * time.Second)
+		fmt.Print("Press enter to continue")
+		_, _ = fmt.Scanln(&input)
 	}
 	for _, device := range devices {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			fmt.Println("Done flashing device " + device + "... Rebooting")
-			platformToolCommand := *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot")
-			err := platformToolCommand.Run()
-			if err != nil {
-				log.Println(err.Error())
-			}
-		}()
+		fmt.Println("Rebooting " + device + "...")
+		platformToolCommand := *fastboot
+		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot")
+		_ = platformToolCommand.Run()
 	}
-	wg.Wait()
 	fmt.Println("Bulk flashing complete")
 }
 
