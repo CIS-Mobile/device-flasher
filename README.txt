@@ -8,7 +8,11 @@ Prerequisites:
 
 Execution:
  On Windows:
-    Double-click on altOS-flasher_windows.exe
+    Double-click on altOS-flasher_windows.exe (will not show error output)
+    or 
+    Open PowerShell or Command Line
+    Type: .\altOS-flasher_windows.exe
+    Press enter
  On Linux:
     Open a terminal in the current directory
     Type: sudo ./altOS-flasher_linux
