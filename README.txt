@@ -1,3 +1,5 @@
+Copyright © 2020 CIS Maxwell, LLC. All rights reserved.
+
 Prerequisites:
     Plug each device of a same model to a USB port
 

@@ -3,4 +3,5 @@
 !.gitignore
 !flasher.go
 !README.txt
+!LICENSE
 !altOS-flasher*
