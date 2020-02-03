@@ -263,7 +263,7 @@ func getFactoryImage() error {
 		return err
 	}
 	body := string(out)
-	links := regexp.MustCompile("http.*("+device+"-p).*([0-9]{3}-).*(.zip)").FindAllString(body, -1)
+	links := regexp.MustCompile("http.*("+device+"-o).*([0-9]{3}-).*(.zip)").FindAllString(body, -1)
 	factoryImage = links[len(links)-1]
 	_, err = url.ParseRequestURI(factoryImage)
 	if err != nil {
@@ -380,17 +380,9 @@ func flashDevices() {
 		platformToolCommand := *fastboot
 		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
 		err := platformToolCommand.Run()
-		if err != nil {
-			fmt.Println("Failed to erase avb_custom_key. Exiting...")
-			return
-		}
 		platformToolCommand = *fastboot
 		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
 		err = platformToolCommand.Run()
-		if err != nil {
-			fmt.Println("Failed to flash avb_custom_key. Exiting...")
-			return
-		}
 		fmt.Println("Please use the volume and power keys on the device to confirm.")
 		platformToolCommand = *fastboot
 		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
