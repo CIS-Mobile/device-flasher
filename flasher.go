@@ -93,7 +93,7 @@ func main() {
 	checkPrerequisiteFiles()
 	//TODO see if there's a better way of getting a list of google devices
 	googleDevice := false
-	for _, codename := range []string{"sailfish", "marlin", "walleye", "taimen", "blueline", "crosshatch", "sargo", "bonito"} {
+	for _, codename := range []string{"bullhead", "sailfish", "marlin", "walleye", "taimen"} {
 		if codename == device {
 			googleDevice = true
 			break
@@ -387,17 +387,9 @@ func flashDevices() {
 			platformToolCommand := *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
 			err := platformToolCommand.Run()
-			if err != nil {
-				fmt.Println("Failed to erase avb_custom_key. Exiting...")
-				return
-			}
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
 			err = platformToolCommand.Run()
-			if err != nil {
-				fmt.Println("Failed to flash avb_custom_key. Exiting...")
-				return
-			}
 			fmt.Println("Please use the volume and power keys on the device to confirm.")
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
