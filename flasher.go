@@ -402,12 +402,13 @@ func flashDevices() {
 			fmt.Print("Press enter to continue")
 			_, _ = fmt.Scanln(&input)
 		}
-	}
-	for _, device := range devices {
-		fmt.Println("Rebooting " + device + "...")
-		platformToolCommand := *fastboot
-		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot")
-		_ = platformToolCommand.Run()
+	} else {
+		for _, device := range devices {
+			fmt.Println("Rebooting " + device + "...")
+			platformToolCommand := *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot")
+			_ = platformToolCommand.Run()
+		}
 	}
 	fmt.Println("Bulk flashing complete")
 }
