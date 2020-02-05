@@ -145,7 +145,7 @@ func checkPrerequisiteFiles() {
 	}
 	for _, file := range files {
 		file := file.Name()
-		if strings.Contains(file, device) && strings.HasSuffix(file, ".zip") {
+		if strings.Contains(file, strings.ToLower(device)) && strings.HasSuffix(file, ".zip") {
 			if strings.Contains(file, "factory") {
 				factoryImage = file
 			} else if strings.Contains(file, "-img-") {
@@ -315,11 +315,7 @@ func flashDevices() {
 		fmt.Println("Please use the volume and power keys on the device to confirm.")
 		platformToolCommand = *fastboot
 		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
-		err := platformToolCommand.Run()
-		if err != nil {
-			fmt.Println("Failed to unlock device bootloader. Exiting...")
-			return
-		}
+		_ = platformToolCommand.Run()
 		time.Sleep(5 * time.Second)
 		fmt.Print("Press enter to continue")
 		_, _ = fmt.Scanln(&input)
