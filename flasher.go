@@ -91,7 +91,15 @@ func main() {
 		}
 	}
 	checkPrerequisiteFiles()
-	if factoryImage == "" {
+	//TODO see if there's a better way of getting a list of google devices
+	googleDevice := false
+	for _, codename := range []string{"sailfish", "marlin", "walleye", "taimen", "blueline", "crosshatch", "sargo", "bonito"} {
+		if codename == device {
+			googleDevice = true
+			break
+		}
+	}
+	if factoryImage == "" && googleDevice {
 		fmt.Println("Factory image missing. Attempting to download from https://developers.google.com/android/images/index.html")
 		err = getFactoryImage()
 		if err != nil {
@@ -100,28 +108,30 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	err = extractZip(path.Base(factoryImage), cwd)
-	if err != nil {
-		fmt.Println(err.Error())
-		fmt.Println("Cannot continue without the device factory image. Exiting...")
-		os.Exit(1)
-	}
-	factoryImage = regexp.MustCompile(".*\\.[0-9]{3}").FindAllString(factoryImage, -1)[0]
-	factoryImage = cwd + string(os.PathSeparator) + factoryImage + string(os.PathSeparator)
-	files, err := ioutil.ReadDir(factoryImage)
-	if err != nil {
-		fmt.Println(err.Error())
-		fmt.Println("Cannot continue without the device factory image. Exiting...")
-		os.Exit(1)
-	}
-	for _, file := range files {
-		file := file.Name()
-		if strings.Contains(file, "bootloader") {
-			bootloader = factoryImage + file
-		} else if strings.Contains(file, "radio") {
-			radio = factoryImage + file
-		} else if strings.Contains(file, "image") {
-			image = factoryImage + file
+	if factoryImage != "" {
+		err = extractZip(path.Base(factoryImage), cwd)
+		if err != nil {
+			fmt.Println(err.Error())
+			fmt.Println("Cannot continue without the device factory image. Exiting...")
+			os.Exit(1)
+		}
+		factoryImage = regexp.MustCompile(".*\\.[0-9]{3}").FindAllString(factoryImage, -1)[0]
+		factoryImage = cwd + string(os.PathSeparator) + factoryImage + string(os.PathSeparator)
+		files, err := ioutil.ReadDir(factoryImage)
+		if err != nil {
+			fmt.Println(err.Error())
+			fmt.Println("Cannot continue without the device factory image. Exiting...")
+			os.Exit(1)
+		}
+		for _, file := range files {
+			file := file.Name()
+			if strings.Contains(file, "bootloader") {
+				bootloader = factoryImage + file
+			} else if strings.Contains(file, "radio") {
+				radio = factoryImage + file
+			} else if strings.Contains(file, "image") {
+				image = factoryImage + file
+			}
 		}
 	}
 	flashDevices()
@@ -135,7 +145,7 @@ func checkPrerequisiteFiles() {
 	}
 	for _, file := range files {
 		file := file.Name()
-		if strings.Contains(file, device) && strings.HasSuffix(file, ".zip") {
+		if strings.Contains(file, strings.ToLower(device)) && strings.HasSuffix(file, ".zip") {
 			if strings.Contains(file, "factory") {
 				factoryImage = file
 			} else if strings.Contains(file, "-img-") {
@@ -147,9 +157,6 @@ func checkPrerequisiteFiles() {
 	}
 	if altosImage == "" {
 		fmt.Println("Cannot continue without altOS device image. Exiting...")
-		os.Exit(1)
-	} else if altosKey == "" {
-		fmt.Println("Cannot continue without altOS key. Exiting...")
 		os.Exit(1)
 	}
 }
@@ -307,11 +314,7 @@ func flashDevices() {
 		fmt.Println("Please use the volume and power keys on the device to confirm.")
 		platformToolCommand = *fastboot
 		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
-		err := platformToolCommand.Run()
-		if err != nil {
-			fmt.Println("Failed to unlock device bootloader. Exiting...")
-			return
-		}
+		_ = platformToolCommand.Run()
 		time.Sleep(5 * time.Second)
 		fmt.Print("Press enter to continue")
 		_, _ = fmt.Scanln(&input)
@@ -321,35 +324,38 @@ func flashDevices() {
 		wg.Add(1)
 		go func(device string) {
 			defer wg.Done()
-			fmt.Println("Flashing stock firmware on device " + device + "...")
 			platformToolCommand := *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
-			err := platformToolCommand.Run()
-			if err != nil {
-				fmt.Println("Failed to flash stock bootloader on device " + device)
-				return
-			}
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
-			_ = platformToolCommand.Run()
-			time.Sleep(5 * time.Second)
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
-			err = platformToolCommand.Run()
-			if err != nil {
-				fmt.Println("Failed to flash stock radio on device " + device)
-				return
-			}
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
-			_ = platformToolCommand.Run()
-			time.Sleep(5 * time.Second)
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", image)
-			err = platformToolCommand.Run()
-			if err != nil {
-				fmt.Println("Failed to flash stock image on device " + device)
-				return
+			err := errors.New("")
+			if factoryImage != "" {
+				fmt.Println("Flashing stock firmware on device " + device + "...")
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
+				err := platformToolCommand.Run()
+				if err != nil {
+					fmt.Println("Failed to flash stock bootloader on device " + device)
+					return
+				}
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+				_ = platformToolCommand.Run()
+				time.Sleep(5 * time.Second)
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
+				err = platformToolCommand.Run()
+				if err != nil {
+					fmt.Println("Failed to flash stock radio on device " + device)
+					return
+				}
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+				_ = platformToolCommand.Run()
+				time.Sleep(5 * time.Second)
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", image)
+				err = platformToolCommand.Run()
+				if err != nil {
+					fmt.Println("Failed to flash stock image on device " + device)
+					return
+				}
 			}
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
@@ -375,25 +381,35 @@ func flashDevices() {
 		}(device)
 	}
 	wg.Wait()
-	for _, device := range devices {
-		fmt.Println("Locking device " + device + " bootloader...")
-		platformToolCommand := *fastboot
-		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
-		err := platformToolCommand.Run()
-		platformToolCommand = *fastboot
-		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
-		err = platformToolCommand.Run()
-		fmt.Println("Please use the volume and power keys on the device to confirm.")
-		platformToolCommand = *fastboot
-		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
-		err = platformToolCommand.Run()
-		if err != nil {
-			fmt.Println("Failed to lock device bootloader. Exiting...")
-			return
+	if altosKey != "" {
+		for _, device := range devices {
+			fmt.Println("Locking device " + device + " bootloader...")
+			platformToolCommand := *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
+			err := platformToolCommand.Run()
+			if err != nil {
+				fmt.Println("Failed to erase avb_custom_key. Exiting...")
+				return
+			}
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
+			err = platformToolCommand.Run()
+			if err != nil {
+				fmt.Println("Failed to flash avb_custom_key. Exiting...")
+				return
+			}
+			fmt.Println("Please use the volume and power keys on the device to confirm.")
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
+			err = platformToolCommand.Run()
+			if err != nil {
+				fmt.Println("Failed to lock device bootloader. Exiting...")
+				return
+			}
+			time.Sleep(5 * time.Second)
+			fmt.Print("Press enter to continue")
+			_, _ = fmt.Scanln(&input)
 		}
-		time.Sleep(5 * time.Second)
-		fmt.Print("Press enter to continue")
-		_, _ = fmt.Scanln(&input)
 	}
 	for _, device := range devices {
 		fmt.Println("Rebooting " + device + "...")
