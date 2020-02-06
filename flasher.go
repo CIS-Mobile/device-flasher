@@ -257,7 +257,6 @@ func getDevices(platformToolCommand exec.Cmd) {
 }
 
 func getFactoryImage() error {
-	device := getProp("ro.product.device")
 	if device == "" {
 		return errors.New("could not find prop ro.product.device")
 	}
