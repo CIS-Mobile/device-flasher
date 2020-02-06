@@ -1,0 +1,3 @@
+[submodule "src/golang.org/x/sys"]
+	path = src/golang.org/x/sys
+	url = https://github.com/golang/sys

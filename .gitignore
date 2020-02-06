@@ -1,6 +1,7 @@
 *
 
 !.gitignore
+!.gitmodules
 !flasher.go
 !README.txt
 !LICENSE
