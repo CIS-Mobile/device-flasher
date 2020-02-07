@@ -64,12 +64,21 @@ var (
 	Yellow = Color("\033[1;33m%s\033[0m")
 )
 
-func Color(colorString string) func(...interface{}) string {
+func Color(color string) func(...interface{}) string {
 	sprint := func(args ...interface{}) string {
-		return fmt.Sprintf(colorString,
+		return fmt.Sprintf(color,
 			fmt.Sprint(args...))
 	}
 	return sprint
+}
+
+func fatalln(err error) {
+	_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
+	os.Exit(1)
+}
+
+func errorln(err string) {
+	_, _ = fmt.Fprintln(os.Stderr, Error(err))
 }
 
 func main() {
@@ -77,9 +86,8 @@ func main() {
 	if err != nil {
 		err := getPlatformTools()
 		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
-			_, _ = fmt.Fprintln(os.Stderr, Error("Cannot continue without Android platform tools. Exiting..."))
-			os.Exit(1)
+			errorln("Cannot continue without Android platform tools. Exiting...")
+			fatalln(err)
 		}
 	}
 	if OS == "linux" {
@@ -96,7 +104,7 @@ func main() {
 	if len(devices) == 0 {
 		getDevices(*fastboot)
 		if len(devices) == 0 {
-			_, _ = fmt.Fprintln(os.Stderr, Error("No device connected. Exiting..."))
+			errorln("No device connected. Exiting...")
 			os.Exit(1)
 		}
 	}
@@ -104,7 +112,7 @@ func main() {
 	if device == "" {
 		device = getVar("product")
 		if device == "" {
-			_, _ = fmt.Fprintln(os.Stderr, Error("Cannot determine device model. Exiting..."))
+			errorln("Cannot determine device model. Exiting...")
 			os.Exit(1)
 		}
 	}
@@ -121,25 +129,22 @@ func main() {
 		fmt.Println("Factory image missing. Attempting to download from https://developers.google.com/android/images/index.html")
 		err = getFactoryImage()
 		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
-			_, _ = fmt.Fprintln(os.Stderr, Error("Cannot continue without the device factory image. Exiting..."))
-			os.Exit(1)
+			errorln("Cannot continue without the device factory image. Exiting...")
+			fatalln(err)
 		}
 	}
 	if factoryImage != "" {
 		err = extractZip(path.Base(factoryImage), cwd)
 		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
-			_, _ = fmt.Fprintln(os.Stderr, Error("Cannot continue without the device factory image. Exiting..."))
-			os.Exit(1)
+			errorln("Cannot continue without the device factory image. Exiting...")
+			fatalln(err)
 		}
 		factoryImage = regexp.MustCompile(".*\\.[0-9]{3}").FindAllString(factoryImage, -1)[0]
 		factoryImage = cwd + string(os.PathSeparator) + factoryImage + string(os.PathSeparator)
 		files, err := ioutil.ReadDir(factoryImage)
 		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
-			_, _ = fmt.Fprintln(os.Stderr, Error("Cannot continue without the device factory image. Exiting..."))
-			os.Exit(1)
+			errorln("Cannot continue without the device factory image. Exiting...")
+			fatalln(err)
 		}
 		for _, file := range files {
 			file := file.Name()
@@ -158,8 +163,7 @@ func main() {
 func checkPrerequisiteFiles() {
 	files, err := ioutil.ReadDir(cwd)
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
-		os.Exit(1)
+		fatalln(err)
 	}
 	for _, file := range files {
 		file := file.Name()
@@ -174,7 +178,7 @@ func checkPrerequisiteFiles() {
 		}
 	}
 	if altosImage == "" {
-		_, _ = fmt.Fprintln(os.Stderr, Error("Cannot continue without altOS device image. Exiting..."))
+		errorln("Cannot continue without altOS device image. Exiting...")
 		os.Exit(1)
 	}
 }
@@ -230,21 +234,18 @@ func checkUdevRules() {
 	if os.IsNotExist(err) {
 		err = exec.Command("sudo", "mkdir", "/etc/udev/rules.d/").Run()
 		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
-			_, _ = fmt.Fprintln(os.Stderr, Error("Cannot continue without udev rules. Exiting..."))
-			os.Exit(1)
+			errorln("Cannot continue without udev rules. Exiting...")
+			fatalln(err)
 		}
 		err = downloadFile("https://raw.githubusercontent.com/invisiblek/udevrules/master/99-android.rules")
 		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
-			_, _ = fmt.Fprintln(os.Stderr, Error("Cannot continue without udev rules. Exiting..."))
-			os.Exit(1)
+			errorln("Cannot continue without udev rules. Exiting...")
+			fatalln(err)
 		}
 		err = exec.Command("sudo", "cp", "99-android.rules", "/etc/udev/rules.d/").Run()
 		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
-			_, _ = fmt.Fprintln(os.Stderr, Error("Cannot continue without udev rules. Exiting..."))
-			os.Exit(1)
+			errorln("Cannot continue without udev rules. Exiting...")
+			fatalln(err)
 		}
 		_ = exec.Command("sudo", "udevadm", "control", "--reload-rules").Run()
 		_ = exec.Command("sudo", "udevadm", "trigger").Run()
@@ -256,7 +257,7 @@ func killAdb() {
 	platformToolCommand.Args = append(platformToolCommand.Args, "kill-server")
 	err := platformToolCommand.Run()
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
+		errorln(err.Error())
 	}
 }
 
@@ -334,7 +335,7 @@ func flashDevices() {
 		platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
 		err := platformToolCommand.Run()
 		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, Error("Failed to unlock device bootloader. Exiting..."))
+			errorln("Failed to unlock device bootloader. Exiting...")
 			return
 		}
 		time.Sleep(5 * time.Second)
@@ -353,7 +354,7 @@ func flashDevices() {
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
 				err := platformToolCommand.Run()
 				if err != nil {
-					_, _ = fmt.Fprintln(os.Stderr, Error("Failed to flash stock bootloader on device "+device))
+					errorln("Failed to flash stock bootloader on device " + device)
 					return
 				}
 				platformToolCommand = *fastboot
@@ -364,7 +365,7 @@ func flashDevices() {
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
 				err = platformToolCommand.Run()
 				if err != nil {
-					_, _ = fmt.Fprintln(os.Stderr, Error("Failed to flash stock radio on device "+device))
+					errorln("Failed to flash stock radio on device " + device)
 					return
 				}
 				platformToolCommand = *fastboot
@@ -375,7 +376,7 @@ func flashDevices() {
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", image)
 				err = platformToolCommand.Run()
 				if err != nil {
-					_, _ = fmt.Fprintln(os.Stderr, Error("Failed to flash stock image on device "+device))
+					errorln("Failed to flash stock image on device " + device)
 					return
 				}
 			}
@@ -388,7 +389,7 @@ func flashDevices() {
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", altosImage)
 			err = platformToolCommand.Run()
 			if err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, Error("Failed to flash altOS on device "+device))
+				errorln("Failed to flash altOS on device " + device)
 				return
 			}
 			fmt.Println("Wiping userdata for device " + device + "...")
@@ -396,7 +397,7 @@ func flashDevices() {
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "-w", "reboot-bootloader")
 			err = platformToolCommand.Run()
 			if err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, Error("Failed to wipe userdata for device "+device))
+				errorln("Failed to wipe userdata for device " + device)
 				return
 			}
 			time.Sleep(5 * time.Second)
@@ -410,14 +411,14 @@ func flashDevices() {
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
 			err := platformToolCommand.Run()
 			if err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, Error("Failed to erase avb_custom_key. Exiting..."))
+				errorln("Failed to erase avb_custom_key. Exiting...")
 				return
 			}
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
 			err = platformToolCommand.Run()
 			if err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, Error("Failed to flash avb_custom_key. Exiting..."))
+				errorln("Failed to flash avb_custom_key. Exiting...")
 				return
 			}
 			fmt.Println("Please use the volume and power keys on the device to confirm.")
@@ -425,7 +426,7 @@ func flashDevices() {
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
 			err = platformToolCommand.Run()
 			if err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, Error("Failed to lock device bootloader. Exiting..."))
+				errorln("Failed to lock device bootloader. Exiting...")
 				return
 			}
 			time.Sleep(5 * time.Second)
