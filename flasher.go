@@ -18,7 +18,6 @@ import (
 	"archive/zip"
 	"errors"
 	"fmt"
-	"golang.org/x/sys/windows"
 	"io"
 	"io/ioutil"
 	"math"
@@ -74,13 +73,6 @@ func Color(colorString string) func(...interface{}) string {
 }
 
 func main() {
-	if OS == "windows" {
-		stdout := windows.Handle(os.Stdout.Fd())
-		var originalMode uint32
-
-		windows.GetConsoleMode(stdout, &originalMode)
-		windows.SetConsoleMode(stdout, originalMode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING)
-	}
 	err := checkPlatformTools()
 	if err != nil {
 		err := getPlatformTools()

@@ -2,7 +2,7 @@
 
 !.gitignore
 !.gitmodules
-!flasher.go
+!*.go
 !README.txt
 !LICENSE
 !altOS-flasher*
