@@ -73,15 +73,22 @@ func Color(color string) func(...interface{}) string {
 }
 
 func fatalln(err error) {
+	log, _ := os.OpenFile("error.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
+	_, _ = fmt.Fprintln(log, err.Error())
+	log.Close()
 	os.Exit(1)
 }
 
 func errorln(err string) {
+	log, _ := os.OpenFile("error.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	defer log.Close()
+	_, _ = fmt.Fprintln(log, err)
 	_, _ = fmt.Fprintln(os.Stderr, Error(err))
 }
 
 func main() {
+	_ = os.Remove("error.log")
 	err := checkPlatformTools()
 	if err != nil {
 		err := getPlatformTools()
