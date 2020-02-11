@@ -244,10 +244,13 @@ func checkUdevRules() {
 			errorln("Cannot continue without udev rules. Exiting...")
 			fatalln(err)
 		}
-		err = downloadFile("https://raw.githubusercontent.com/invisiblek/udevrules/master/99-android.rules")
-		if err != nil {
-			errorln("Cannot continue without udev rules. Exiting...")
-			fatalln(err)
+		_, err = os.Stat("./99-android.rules")
+		if os.IsNotExist(err) {
+			err = downloadFile("https://raw.githubusercontent.com/invisiblek/udevrules/master/99-android.rules")
+			if err != nil {
+				errorln("Cannot continue without udev rules. Exiting...")
+				fatalln(err)
+			}
 		}
 		err = exec.Command("sudo", "cp", "99-android.rules", "/etc/udev/rules.d/").Run()
 		if err != nil {
