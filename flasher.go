@@ -40,8 +40,8 @@ var cwd = filepath.Dir(executable)
 const OS = runtime.GOOS
 const PLATFORM_TOOLS_ZIP = "platform-tools-latest-" + OS + ".zip"
 
-var adb = exec.Command("adb")
-var fastboot = exec.Command("fastboot")
+var adb *exec.Cmd
+var fastboot *exec.Cmd
 
 var input string
 
@@ -89,18 +89,14 @@ func errorln(err string) {
 
 func main() {
 	_ = os.Remove("error.log")
-	err := checkPlatformTools()
+	err := getPlatformTools()
 	if err != nil {
-		err := getPlatformTools()
-		if err != nil {
-			errorln("Cannot continue without Android platform tools. Exiting...")
-			fatalln(err)
-		}
+		errorln("Cannot continue without Android platform tools. Exiting...")
+		fatalln(err)
 	}
 	if OS == "linux" {
 		checkUdevRules()
 	}
-	killAdb()
 	fmt.Println("Do the following for each device:")
 	fmt.Println("Enable Developer Options on device (Settings -> About Phone -> tap \"Build number\" 7 times)")
 	fmt.Println("Enable USB debugging on device (Settings -> System -> Advanced -> Developer Options) and allow the computer to debug (hit \"OK\" on the popup when USB is connected)")
@@ -190,26 +186,6 @@ func checkPrerequisiteFiles() {
 	}
 }
 
-func checkPlatformTools() error {
-	err := checkAdb()
-	if err != nil {
-		return err
-	}
-	return checkFastboot()
-}
-
-func checkAdb() error {
-	platformTool := *adb
-	platformTool.Args = append(platformTool.Args, "version")
-	return checkCommand(platformTool)
-}
-
-func checkFastboot() error {
-	platformTool := *fastboot
-	platformTool.Args = append(platformTool.Args, "--version")
-	return checkCommand(platformTool)
-}
-
 func getPlatformTools() error {
 	platformToolsPath := cwd + string(os.PathSeparator) + "platform-tools" + string(os.PathSeparator)
 	adbPath := platformToolsPath + "adb"
@@ -220,8 +196,11 @@ func getPlatformTools() error {
 	}
 	adb = exec.Command(adbPath)
 	fastboot = exec.Command(fastbootPath)
-	killAdb()
-	err := extractZip(PLATFORM_TOOLS_ZIP, cwd)
+	_, err := os.Stat(platformToolsPath)
+	if err == nil {
+		killAdb()
+	}
+	err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
 	if err != nil {
 		fmt.Println("There are missing Android platform tools in PATH. Attempting to download https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
 		err = downloadFile("https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
@@ -229,9 +208,6 @@ func getPlatformTools() error {
 			return err
 		}
 		err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
-		if err != nil {
-			return err
-		}
 	}
 	return err
 }
@@ -244,7 +220,7 @@ func checkUdevRules() {
 			errorln("Cannot continue without udev rules. Exiting...")
 			fatalln(err)
 		}
-		_, err = os.Stat("./99-android.rules")
+		_, err = os.Stat("99-android.rules")
 		if os.IsNotExist(err) {
 			err = downloadFile("https://raw.githubusercontent.com/invisiblek/udevrules/master/99-android.rules")
 			if err != nil {
