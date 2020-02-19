@@ -111,6 +111,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	fmt.Println("Detected " + string(len(devices)) + " devices: " + strings.Join(devices, ", "))
 	device = getProp("ro.product.device")
 	if device == "" {
 		device = getVar("product")
