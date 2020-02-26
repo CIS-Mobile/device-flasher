@@ -393,16 +393,7 @@ func flashDevices() {
 				platformToolCommand = *fastboot
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
 				_ = platformToolCommand.Start()
-				time.Sleep(5 * time.Second)
-				if getVar("unlocked", device) != "no" {
-					errorln("Failed to lock device " + device + " bootloader")
-					return
-				}
 			}
-			fmt.Println("Rebooting " + device + "...")
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot")
-			_ = platformToolCommand.Start()
 		}(device)
 	}
 	wg.Wait()
