@@ -110,9 +110,9 @@ func main() {
 		}
 	}
 	fmt.Println("Detected " + strconv.Itoa(len(devices)) + " devices: " + strings.Join(devices, ", "))
-	device = getProp("ro.product.device")
+	device = getProp("ro.product.device", devices[0])
 	if device == "" {
-		device = getVar("product")
+		device = getVar("product", devices[0])
 		if device == "" {
 			fatalln(errors.New("Cannot determine device model. Exiting..."))
 		}
@@ -285,9 +285,9 @@ func getFactoryImage() error {
 	return nil
 }
 
-func getProp(prop string) string {
+func getProp(prop string, device string) string {
 	platformToolCommand := *adb
-	platformToolCommand.Args = append(adb.Args, "-s", devices[0], "shell", "getprop", prop)
+	platformToolCommand.Args = append(adb.Args, "-s", device, "shell", "getprop", prop)
 	out, err := platformToolCommand.Output()
 	if err != nil {
 		return ""
@@ -295,9 +295,9 @@ func getProp(prop string) string {
 	return strings.Trim(string(out), "[]\n\r")
 }
 
-func getVar(prop string) string {
+func getVar(prop string, device string) string {
 	platformToolCommand := *fastboot
-	platformToolCommand.Args = append(adb.Args, "-s", devices[0], "getvar", prop)
+	platformToolCommand.Args = append(adb.Args, "-s", device, "getvar", prop)
 	out, err := platformToolCommand.CombinedOutput()
 	if err != nil {
 		return ""
@@ -319,7 +319,7 @@ func flashDevices() {
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
 			_ = platformToolCommand.Run()
-			if getVar("unlocked") != "yes" {
+			if getVar("unlocked", device) != "yes" {
 				errorln("Failed to unlock device " + device + " bootloader")
 				return
 			}
@@ -385,7 +385,7 @@ func flashDevices() {
 				platformToolCommand = *fastboot
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
 				_ = platformToolCommand.Run()
-				if getVar("unlocked") != "no" {
+				if getVar("unlocked", device) != "no" {
 					errorln("Failed to lock device " + device + " bootloader")
 					return
 				}
