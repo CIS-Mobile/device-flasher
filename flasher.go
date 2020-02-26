@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var executable, _ = os.Executable()
@@ -110,9 +111,9 @@ func main() {
 		}
 	}
 	fmt.Println("Detected " + strconv.Itoa(len(devices)) + " devices: " + strings.Join(devices, ", "))
-	device = getProp("ro.product.device")
+	device = getProp("ro.product.device", devices[0])
 	if device == "" {
-		device = getVar("product")
+		device = getVar("product", devices[0])
 		if device == "" {
 			fatalln(errors.New("Cannot determine device model. Exiting..."))
 		}
@@ -286,9 +287,9 @@ func getFactoryImage() error {
 	return nil
 }
 
-func getProp(prop string) string {
+func getProp(prop string, device string) string {
 	platformToolCommand := *adb
-	platformToolCommand.Args = append(adb.Args, "-s", devices[0], "shell", "getprop", prop)
+	platformToolCommand.Args = append(adb.Args, "-s", device, "shell", "getprop", prop)
 	out, err := platformToolCommand.Output()
 	if err != nil {
 		return ""
@@ -296,14 +297,20 @@ func getProp(prop string) string {
 	return strings.Trim(string(out), "[]\n\r")
 }
 
-func getVar(prop string) string {
+func getVar(prop string, device string) string {
 	platformToolCommand := *fastboot
-	platformToolCommand.Args = append(adb.Args, "-s", devices[0], "getvar", prop)
+	platformToolCommand.Args = append(adb.Args, "-s", device, "getvar", prop)
 	out, err := platformToolCommand.CombinedOutput()
 	if err != nil {
 		return ""
 	}
-	return strings.Trim(strings.Split(strings.Split(string(out), "\n")[0], " ")[1], "\r")
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, prop) {
+			return strings.Trim(strings.Split(line, " ")[1], "\r")
+		}
+	}
+	return ""
 }
 
 func flashDevices() {
@@ -319,8 +326,9 @@ func flashDevices() {
 			fmt.Println("Please use the volume and power keys on the device to confirm.")
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
-			_ = platformToolCommand.Run()
-			if getVar("unlocked") != "yes" {
+			_ = platformToolCommand.Start()
+			time.Sleep(5 * time.Second)
+			if getVar("unlocked", device) != "yes" {
 				errorln("Failed to unlock device " + device + " bootloader")
 				return
 			}
@@ -393,8 +401,9 @@ func flashDevices() {
 				fmt.Println("Please use the volume and power keys on the device to confirm.")
 				platformToolCommand = *fastboot
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
-				_ = platformToolCommand.Run()
-				if getVar("unlocked") != "no" {
+				_ = platformToolCommand.Start()
+				time.Sleep(5 * time.Second)
+				if getVar("unlocked", device) != "no" {
 					errorln("Failed to lock device " + device + " bootloader")
 					return
 				}
