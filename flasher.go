@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var executable, _ = os.Executable()
@@ -302,7 +303,13 @@ func getVar(prop string, device string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.Trim(strings.Split(strings.Split(string(out), "\n")[0], " ")[1], "\r")
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, prop) {
+			return strings.Trim(strings.Split(line, " ")[1], "\r")
+		}
+	}
+	return ""
 }
 
 func flashDevices() {
@@ -318,7 +325,8 @@ func flashDevices() {
 			fmt.Println("Please use the volume and power keys on the device to confirm.")
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
-			_ = platformToolCommand.Run()
+			_ = platformToolCommand.Start()
+			time.Sleep(5 * time.Second)
 			if getVar("unlocked", device) != "yes" {
 				errorln("Failed to unlock device " + device + " bootloader")
 				return
@@ -384,7 +392,8 @@ func flashDevices() {
 				fmt.Println("Please use the volume and power keys on the device to confirm.")
 				platformToolCommand = *fastboot
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
-				_ = platformToolCommand.Run()
+				_ = platformToolCommand.Start()
+				time.Sleep(5 * time.Second)
 				if getVar("unlocked", device) != "no" {
 					errorln("Failed to lock device " + device + " bootloader")
 					return
