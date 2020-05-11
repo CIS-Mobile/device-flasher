@@ -98,6 +98,7 @@ func main() {
 		checkUdevRules()
 	}
 	fmt.Println("Do the following for each device:")
+	fmt.Println("Connect to a wifi network and ensure that no SIM cards are installed")
 	fmt.Println("Enable Developer Options on device (Settings -> About Phone -> tap \"Build number\" 7 times)")
 	fmt.Println("Enable USB debugging on device (Settings -> System -> Advanced -> Developer Options) and allow the computer to debug (hit \"OK\" on the popup when USB is connected)")
 	fmt.Println("Enable OEM Unlocking (in the same Developer Options menu)")
