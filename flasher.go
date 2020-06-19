@@ -22,12 +22,10 @@ import (
 	"io/ioutil"
 	"math"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -120,44 +118,26 @@ func main() {
 		}
 	}
 	checkPrerequisiteFiles()
-	//TODO see if there's a better way of getting a list of google devices
-	googleDevice := false
-	for _, codename := range []string{"sailfish", "marlin", "walleye", "taimen", "blueline", "crosshatch", "sargo", "bonito"} {
-		if codename == device {
-			googleDevice = true
-			break
-		}
+	err = extractZip(path.Base(factoryImage), cwd)
+	if err != nil {
+		errorln("Cannot continue without the device factory image. Exiting...")
+		fatalln(err)
 	}
-	if factoryImage == "" && googleDevice {
-		fmt.Println("Factory image missing. Attempting to download from https://developers.google.com/android/images/index.html")
-		err = getFactoryImage()
-		if err != nil {
-			errorln("Cannot continue without the device factory image. Exiting...")
-			fatalln(err)
-		}
+	factoryImage = factoryImage[0:strings.Index(factoryImage, "-factory")]
+	factoryImage = cwd + string(os.PathSeparator) + factoryImage + string(os.PathSeparator)
+	files, err := ioutil.ReadDir(factoryImage)
+	if err != nil {
+		errorln("Cannot continue without the device factory image. Exiting...")
+		fatalln(err)
 	}
-	if factoryImage != "" {
-		err = extractZip(path.Base(factoryImage), cwd)
-		if err != nil {
-			errorln("Cannot continue without the device factory image. Exiting...")
-			fatalln(err)
-		}
-		factoryImage = regexp.MustCompile(".*\\.[0-9]{3}").FindAllString(factoryImage, -1)[0]
-		factoryImage = cwd + string(os.PathSeparator) + factoryImage + string(os.PathSeparator)
-		files, err := ioutil.ReadDir(factoryImage)
-		if err != nil {
-			errorln("Cannot continue without the device factory image. Exiting...")
-			fatalln(err)
-		}
-		for _, file := range files {
-			file := file.Name()
-			if strings.Contains(file, "bootloader") {
-				bootloader = factoryImage + file
-			} else if strings.Contains(file, "radio") {
-				radio = factoryImage + file
-			} else if strings.Contains(file, "image") {
-				image = factoryImage + file
-			}
+	for _, file := range files {
+		file := file.Name()
+		if strings.Contains(file, "bootloader") {
+			bootloader = factoryImage + file
+		} else if strings.Contains(file, "radio") {
+			radio = factoryImage + file
+		} else if strings.Contains(file, "image") {
+			image = factoryImage + file
 		}
 	}
 	flashDevices()
@@ -258,34 +238,6 @@ func getDevices(platformToolCommand exec.Cmd) {
 	for i, device := range devices {
 		devices[i] = strings.Split(device, "\t")[0]
 	}
-}
-
-func getFactoryImage() error {
-	if device == "" {
-		return errors.New("could not find prop ro.product.device")
-	}
-	resp, err := http.Get("https://developers.google.com/android/images/index.html")
-	if err != nil {
-		return err
-	}
-	out, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-	body := string(out)
-	//TODO better pattern matching for links. maybe find a good way of dynamically getting the android version letter
-	links := regexp.MustCompile("http.*("+device+"-p).*([0-9]{3}-).*(.zip)").FindAllString(body, -1)
-	factoryImage = links[len(links)-1]
-	_, err = url.ParseRequestURI(factoryImage)
-	if err != nil {
-		return err
-	}
-	err = downloadFile(factoryImage)
-	if err != nil {
-		return err
-	}
-	factoryImage = path.Base(factoryImage)
-	return nil
 }
 
 func getProp(prop string, device string) string {
