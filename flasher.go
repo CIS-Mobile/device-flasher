@@ -44,9 +44,8 @@ var fastboot *exec.Cmd
 
 var input string
 
-var altosImage string
 var altosKey string
-var factoryImage string
+var factoryZip string
 var bootloader string
 var radio string
 var image string
@@ -117,15 +116,15 @@ func main() {
 			fatalln(errors.New("Cannot determine device model. Exiting..."))
 		}
 	}
-	checkPrerequisiteFiles()
-	err = extractZip(path.Base(factoryImage), cwd)
+	getPrerequisiteFiles()
+	err = extractZip(path.Base(factoryZip), cwd)
 	if err != nil {
 		errorln("Cannot continue without the device factory image. Exiting...")
 		fatalln(err)
 	}
-	factoryImage = factoryImage[0:strings.Index(factoryImage, "-factory")]
-	factoryImage = cwd + string(os.PathSeparator) + factoryImage + string(os.PathSeparator)
-	files, err := ioutil.ReadDir(factoryImage)
+	factoryZip = factoryZip[0:strings.Index(factoryZip, "-factory")]
+	factoryZip = cwd + string(os.PathSeparator) + factoryZip + string(os.PathSeparator)
+	files, err := ioutil.ReadDir(factoryZip)
 	if err != nil {
 		errorln("Cannot continue without the device factory image. Exiting...")
 		fatalln(err)
@@ -133,17 +132,17 @@ func main() {
 	for _, file := range files {
 		file := file.Name()
 		if strings.Contains(file, "bootloader") {
-			bootloader = factoryImage + file
+			bootloader = factoryZip + file
 		} else if strings.Contains(file, "radio") {
-			radio = factoryImage + file
+			radio = factoryZip + file
 		} else if strings.Contains(file, "image") {
-			image = factoryImage + file
+			image = factoryZip + file
 		}
 	}
 	flashDevices()
 }
 
-func checkPrerequisiteFiles() {
+func getPrerequisiteFiles() {
 	files, err := ioutil.ReadDir(cwd)
 	if err != nil {
 		fatalln(err)
@@ -152,16 +151,11 @@ func checkPrerequisiteFiles() {
 		file := file.Name()
 		if strings.Contains(file, strings.ToLower(device)) && strings.HasSuffix(file, ".zip") {
 			if strings.Contains(file, "factory") {
-				factoryImage = file
-			} else if strings.Contains(file, "-img-") {
-				altosImage = file
+				factoryZip = file
 			}
 		} else if strings.HasSuffix(file, ".bin") {
 			altosKey = file
 		}
-	}
-	if altosImage == "" {
-		fatalln(errors.New("Cannot continue without altOS device image. Exiting..."))
 	}
 }
 
@@ -287,41 +281,31 @@ func flashDevices() {
 			}
 			platformToolCommand = *fastboot
 			err := errors.New("")
-			if factoryImage != "" {
-				fmt.Println("Flashing stock firmware on device " + device + "...")
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
-				err := platformToolCommand.Run()
-				if err != nil {
-					errorln("Failed to flash stock bootloader on device " + device)
-					return
-				}
-				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
-				_ = platformToolCommand.Run()
-				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
-				err = platformToolCommand.Run()
-				if err != nil {
-					errorln("Failed to flash stock radio on device " + device)
-					return
-				}
-				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
-				_ = platformToolCommand.Run()
-				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", image)
-				err = platformToolCommand.Run()
-				if err != nil {
-					errorln("Failed to flash stock image on device " + device)
-					return
-				}
+			fmt.Println("Flashing altOS on device " + device + "...")
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
+			platformToolCommand.Stderr = os.Stderr
+			err = platformToolCommand.Run()
+			if err != nil {
+				errorln("Failed to flash stock bootloader on device " + device)
+				return
 			}
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
 			_ = platformToolCommand.Run()
-			fmt.Println("Flashing altOS on device " + device + "...")
 			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", altosImage)
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
+			platformToolCommand.Stderr = os.Stderr
+			err = platformToolCommand.Run()
+			if err != nil {
+				errorln("Failed to flash stock radio on device " + device)
+				return
+			}
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+			_ = platformToolCommand.Run()
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", image)
+			platformToolCommand.Stderr = os.Stderr
 			err = platformToolCommand.Run()
 			if err != nil {
 				errorln("Failed to flash altOS on device " + device)
@@ -354,8 +338,7 @@ func flashDevices() {
 				fmt.Println("Please use the volume and power keys on the device to confirm.")
 				platformToolCommand = *fastboot
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
-				_ = platformToolCommand.Start()
-				time.Sleep(5 * time.Second)
+				_ = platformToolCommand.Run()
 				if getVar("unlocked", device) != "no" {
 					errorln("Failed to lock device " + device + " bootloader")
 					return
