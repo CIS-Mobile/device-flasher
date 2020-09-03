@@ -30,7 +30,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 var executable, _ = os.Executable()
@@ -50,7 +49,6 @@ var bootloader string
 var radio string
 var image string
 var device string
-var devices []string
 
 var (
 	Warn  = Yellow
@@ -94,6 +92,13 @@ func main() {
 	if OS == "linux" {
 		checkUdevRules()
 	}
+	platformToolCommand := *adb
+	platformToolCommand.Args = append(adb.Args, "start-server")
+	err = platformToolCommand.Run()
+	if err != nil {
+		errorln("Cannot start ADB server")
+		fatalln(err)
+	}
 	fmt.Println("Do the following for each device:")
 	fmt.Println("Connect to a wifi network and ensure that no SIM cards are installed")
 	fmt.Println("Enable Developer Options on device (Settings -> About Phone -> tap \"Build number\" 7 times)")
@@ -101,12 +106,10 @@ func main() {
 	fmt.Println("Enable OEM Unlocking (in the same Developer Options menu)")
 	fmt.Print("When done, press enter to continue")
 	_, _ = fmt.Scanln(&input)
-	getDevices(*adb)
+	devices := getDevices(*adb)
+	devices = append(devices, getDevices(*fastboot)...)
 	if len(devices) == 0 {
-		getDevices(*fastboot)
-		if len(devices) == 0 {
-			fatalln(errors.New("No device connected. Exiting..."))
-		}
+		fatalln(errors.New("No device connected. Exiting..."))
 	}
 	fmt.Println("Detected " + strconv.Itoa(len(devices)) + " devices: " + strings.Join(devices, ", "))
 	device = getProp("ro.product.device", devices[0])
@@ -139,24 +142,7 @@ func main() {
 			image = factoryZip + file
 		}
 	}
-	flashDevices()
-}
-
-func getPrerequisiteFiles() {
-	files, err := ioutil.ReadDir(cwd)
-	if err != nil {
-		fatalln(err)
-	}
-	for _, file := range files {
-		file := file.Name()
-		if strings.Contains(file, strings.ToLower(device)) && strings.HasSuffix(file, ".zip") {
-			if strings.Contains(file, "factory") {
-				factoryZip = file
-			}
-		} else if strings.HasSuffix(file, ".bin") {
-			altosKey = file
-		}
-	}
+	flashDevices(devices)
 }
 
 func getPlatformTools() error {
@@ -211,37 +197,20 @@ func checkUdevRules() {
 	}
 }
 
-func killAdb() {
-	platformToolCommand := *adb
-	platformToolCommand.Args = append(platformToolCommand.Args, "kill-server")
-	err := platformToolCommand.Run()
-	if err != nil {
-		errorln(err.Error())
-	}
-}
-
-func getDevices(platformToolCommand exec.Cmd) {
+func getDevices(platformToolCommand exec.Cmd) []string {
 	platformToolCommand.Args = append(adb.Args, "devices")
 	output, _ := platformToolCommand.Output()
-	devices = strings.Split(string(output), "\n")
+	lines := strings.Split(string(output), "\n")
+	devices := make([]string, 0)
 	if platformToolCommand.Path == adb.Path {
-		devices = devices[1 : len(devices)-2]
-	} else if platformToolCommand.Path == fastboot.Path {
-		devices = devices[:len(devices)-1]
+		lines = lines[1:]
 	}
-	for i, device := range devices {
-		devices[i] = strings.Split(device, "\t")[0]
+	for i, device := range lines {
+		if lines[i] != "" && lines[i] != "\r" {
+			devices = append(devices, strings.Split(device, "\t")[0])
+		}
 	}
-}
-
-func getProp(prop string, device string) string {
-	platformToolCommand := *adb
-	platformToolCommand.Args = append(adb.Args, "-s", device, "shell", "getprop", prop)
-	out, err := platformToolCommand.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.Trim(string(out), "[]\n\r")
+	return devices
 }
 
 func getVar(prop string, device string) string {
@@ -260,7 +229,34 @@ func getVar(prop string, device string) string {
 	return ""
 }
 
-func flashDevices() {
+func getProp(prop string, device string) string {
+	platformToolCommand := *adb
+	platformToolCommand.Args = append(adb.Args, "-s", device, "shell", "getprop", prop)
+	out, err := platformToolCommand.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.Trim(string(out), "[]\n\r")
+}
+
+func getPrerequisiteFiles() {
+	files, err := ioutil.ReadDir(cwd)
+	if err != nil {
+		fatalln(err)
+	}
+	for _, file := range files {
+		file := file.Name()
+		if strings.Contains(file, strings.ToLower(device)) && strings.HasSuffix(file, ".zip") {
+			if strings.Contains(file, "factory") {
+				factoryZip = file
+			}
+		} else if strings.HasSuffix(file, ".bin") {
+			altosKey = file
+		}
+	}
+}
+
+func flashDevices(devices []string) {
 	var wg sync.WaitGroup
 	for _, device := range devices {
 		wg.Add(1)
@@ -273,8 +269,7 @@ func flashDevices() {
 			fmt.Println("Please use the volume and power keys on the device to confirm.")
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
-			_ = platformToolCommand.Start()
-			time.Sleep(5 * time.Second)
+			_ = platformToolCommand.Run()
 			if getVar("unlocked", device) != "yes" {
 				errorln("Failed to unlock device " + device + " bootloader")
 				return
@@ -352,6 +347,34 @@ func flashDevices() {
 	}
 	wg.Wait()
 	fmt.Println("Bulk flashing complete")
+}
+
+func killAdb() {
+	platformToolCommand := *adb
+	platformToolCommand.Args = append(platformToolCommand.Args, "kill-server")
+	err := platformToolCommand.Run()
+	if err != nil {
+		errorln(err.Error())
+	}
+}
+
+func downloadFile(url string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	out, err := os.Create(path.Base(url))
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	counter := &WriteCounter{}
+	_, err = io.Copy(out, io.TeeReader(resp.Body, counter))
+	fmt.Println()
+	return err
 }
 
 func extractZip(src, dest string) error {
@@ -455,23 +478,4 @@ func humanateBytes(s uint64, base float64, sizes []string) string {
 func Bytes(s uint64) string {
 	sizes := []string{"B", "kB", "MB", "GB", "TB", "PB", "EB"}
 	return humanateBytes(s, 1000, sizes)
-}
-
-func downloadFile(url string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	out, err := os.Create(path.Base(url))
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	counter := &WriteCounter{}
-	_, err = io.Copy(out, io.TeeReader(resp.Body, counter))
-	fmt.Println()
-	return err
 }
