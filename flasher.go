@@ -267,12 +267,15 @@ func flashDevices(devices []string) {
 			_ = platformToolCommand.Run()
 			fmt.Println("Unlocking device " + device + " bootloader...")
 			fmt.Println("Please use the volume and power keys on the device to confirm.")
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
-			_ = platformToolCommand.Run()
-			if getVar("unlocked", device) != "yes" {
-				errorln("Failed to unlock device " + device + " bootloader")
-				return
+			for i := 0; getVar("unlocked", device) != "yes"; i++ {
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
+				err := platformToolCommand.Run()
+				if err != nil && i >= 2 {
+					errorln("Failed to unlock device " + device + " bootloader")
+					errorln(err, false)
+					return
+				}
 			}
 			platformToolCommand = *fastboot
 			err := errors.New("")
@@ -331,12 +334,15 @@ func flashDevices(devices []string) {
 					return
 				}
 				fmt.Println("Please use the volume and power keys on the device to confirm.")
-				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
-				_ = platformToolCommand.Run()
-				if getVar("unlocked", device) != "no" {
-					errorln("Failed to lock device " + device + " bootloader")
-					return
+				for i := 0; getVar("unlocked", device) != "no"; i++ {
+					platformToolCommand = *fastboot
+					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
+					err := platformToolCommand.Run()
+					if err != nil && i >= 2 {
+						errorln("Failed to lock device " + device + " bootloader")
+						errorln(err, false)
+						return
+					}
 				}
 			}
 			fmt.Println("Rebooting " + device + "...")
