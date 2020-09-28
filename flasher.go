@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var executable, _ = os.Executable()
@@ -270,10 +271,10 @@ func flashDevices(devices []string) {
 			for i := 0; getVar("unlocked", device) != "yes"; i++ {
 				platformToolCommand = *fastboot
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
-				err := platformToolCommand.Run()
-				if err != nil && i >= 2 {
+				_ = platformToolCommand.Start()
+				time.Sleep(30 * time.Second)
+				if i >= 2 {
 					errorln("Failed to unlock device " + device + " bootloader")
-					errorln(err, false)
 					return
 				}
 			}
@@ -337,10 +338,10 @@ func flashDevices(devices []string) {
 				for i := 0; getVar("unlocked", device) != "no"; i++ {
 					platformToolCommand = *fastboot
 					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "lock")
-					err := platformToolCommand.Run()
-					if err != nil && i >= 2 {
+					_ = platformToolCommand.Start()
+					time.Sleep(30 * time.Second)
+					if i >= 2 {
 						errorln("Failed to lock device " + device + " bootloader")
-						errorln(err, false)
 						return
 					}
 				}
