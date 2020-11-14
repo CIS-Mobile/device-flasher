@@ -291,6 +291,7 @@ func flashDevices(devices []string) {
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
 			_ = platformToolCommand.Run()
+			time.Sleep(5 * time.Second)
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
 			platformToolCommand.Stderr = os.Stderr
@@ -302,6 +303,7 @@ func flashDevices(devices []string) {
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
 			_ = platformToolCommand.Run()
+			time.Sleep(5 * time.Second)
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", image)
 			platformToolCommand.Stderr = os.Stderr
