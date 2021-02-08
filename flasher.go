@@ -33,6 +33,9 @@ import (
 	"time"
 )
 
+var version string
+var gitCommit string
+
 var executable, _ = os.Executable()
 var cwd = filepath.Dir(executable)
 
@@ -84,6 +87,8 @@ func errorln(err string) {
 }
 
 func main() {
+	fmt.Println("Version: " + version + " " + "Git commit: " + gitCommit)
+
 	_ = os.Remove("error.log")
 	err := getPlatformTools()
 	if err != nil {
