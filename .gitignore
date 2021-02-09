@@ -4,6 +4,7 @@
 !.gitmodules
 !*.go
 !Makefile
+!build.bat
 !README.txt
 !LICENSE
 !altOS-flasher*
