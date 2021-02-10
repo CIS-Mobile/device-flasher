@@ -31,6 +31,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"github.com/gookit/color"
 )
 
 var version string
@@ -54,26 +55,9 @@ var radio string
 var image string
 var device string
 
-var (
-	Warn  = Yellow
-	Error = Red
-)
-
-var (
-	Red    = Color("\033[1;31m%s\033[0m")
-	Yellow = Color("\033[1;33m%s\033[0m")
-)
-
-func Color(color string) func(...interface{}) string {
-	return func(args ...interface{}) string {
-		return fmt.Sprintf(color,
-			fmt.Sprint(args...))
-	}
-}
-
 func fatalln(err error) {
 	log, _ := os.OpenFile("error.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	_, _ = fmt.Fprintln(os.Stderr, Error(err.Error()))
+	color.HEX("#FF2121").Println(err.Error())
 	_, _ = fmt.Fprintln(log, err.Error())
 	log.Close()
 	os.Exit(1)
@@ -83,7 +67,7 @@ func errorln(err string) {
 	log, _ := os.OpenFile("error.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	defer log.Close()
 	_, _ = fmt.Fprintln(log, err)
-	_, _ = fmt.Fprintln(os.Stderr, Error(err))
+	color.HEX("#FF2121").Println(err)
 }
 
 func main() {
