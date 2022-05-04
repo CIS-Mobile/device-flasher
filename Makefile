@@ -34,4 +34,5 @@ build_mac:
 ifeq ($(compile_darwin_arm64),true)
 	GOOS=darwin GOARCH=arm64 go build -o "altOS-flasher_darwin-arm64" -ldflags "-X main.version=$(VERSION) -X 'main.gitCommit=$(GIT_COMMIT)'" .
 	$(LIPO_BIN) -create -output altOS-flasher_darwin-universal altOS-flasher_darwin-x86_64 altOS-flasher_darwin-arm64
+	rm -rf altOS-flasher_darwin-x86_64 altOS-flasher_darwin-arm64
 endif
