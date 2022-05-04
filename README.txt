@@ -23,3 +23,8 @@ Execution:
     Open a terminal in the current directory
     Type: ./altOS-flasher_darwin
     Press enter
+
+Compilation:
+ Required packages:
+  https://github.com/gookit/color
+  https://github.com/golang/sys
