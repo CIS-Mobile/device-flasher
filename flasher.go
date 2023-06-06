@@ -1,4 +1,4 @@
-// Copyright 2020 CIS Maxwell, LLC. All rights reserved.
+// Copyright 2020-2023 CIS Maxwell, LLC. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ var executable, _ = os.Executable()
 var cwd = filepath.Dir(executable)
 
 const OS = runtime.GOOS
-const PLATFORM_TOOLS_ZIP = "platform-tools_r33.0.3-" + OS + ".zip"
+const PLATFORM_TOOLS_ZIP = "platform-tools_r34.0.3-" + OS + ".zip"
 
 var adb *exec.Cmd
 var fastboot *exec.Cmd
@@ -157,6 +157,13 @@ func getPlatformTools() error {
 			return err
 		}
 		err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
+	}
+	// Set ANDROID_PRODUCT_OUT to the path of platform-tools. Since v34.0.1 flashing an updatepackage will fail
+	// without doing this first.
+	err = os.Setenv("ANDROID_PRODUCT_OUT", platformToolsPath)
+	if err != nil {
+		errorln("Failed to set environmental variable 'ANDROID_PRODUCT_OUT'")
+		return err
 	}
 	return err
 }
