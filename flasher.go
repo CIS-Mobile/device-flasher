@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math"
 	"net/http"
 	"os"
@@ -31,6 +32,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 	"github.com/gookit/color"
 )
 
@@ -267,41 +269,77 @@ func flashDevices(devices []string) {
 					return
 				}
 			}
-			platformToolCommand = *fastboot
-			err := errors.New("")
 			fmt.Println("Flashing altOS on device " + device + "...")
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
-			platformToolCommand.Stderr = os.Stderr
-			err = platformToolCommand.Run()
-			if err != nil {
-				errorln("Failed to flash stock bootloader on device " + device)
-				return
+
+			// Flash bootloader & radio (these partitions only exist on Pixel devices).
+			if getVar("nos-production", device) == "yes" {
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
+				platformToolCommand.Stderr = os.Stderr
+				err := platformToolCommand.Run()
+				if err != nil {
+					errorln("Failed to flash stock bootloader on device " + device)
+					return
+				}
+
+				// Reboot to bootloader following flashing bootloader.
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+				_ = platformToolCommand.Run()
+
+				time.Sleep(5 * time.Second)
+
+				// Flash radio.
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
+				platformToolCommand.Stderr = os.Stderr
+				err = platformToolCommand.Run()
+				if err != nil {
+					errorln("Failed to flash stock radio on device " + device)
+					return
+				}
+
+				// Reboot to bootloader following flashing radio.
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+				_ = platformToolCommand.Run()
+
+				time.Sleep(5 * time.Second)
+			} else {
+				firmwareDir := factoryZip + "RADIO/"
+
+				// Get a list of all .img files in the directory.
+				files, err := ioutil.ReadDir(firmwareDir)
+				if err != nil {
+					log.Fatalf("Failed to read directory: %v", err)
+				}
+
+				// Loop through each file under RADIO/ and flash it.
+				for _, file := range files {
+					if filepath.Ext(file.Name()) == ".img" {
+						fileBaseName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+						platformToolCommand = *fastboot
+						platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", fileBaseName, firmwareDir+file.Name())
+						platformToolCommand.Stderr = os.Stderr
+						err = platformToolCommand.Run()
+						if err != nil {
+							errorln("Failed to flash partition " + fileBaseName + " on device " + device)
+							return
+						}
+					}
+				}
 			}
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
-			_ = platformToolCommand.Run()
-			time.Sleep(5 * time.Second)
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
-			platformToolCommand.Stderr = os.Stderr
-			err = platformToolCommand.Run()
-			if err != nil {
-				errorln("Failed to flash stock radio on device " + device)
-				return
-			}
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
-			_ = platformToolCommand.Run()
-			time.Sleep(5 * time.Second)
+
+			// Flash the updatepackage included in factory image.
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "-w", "update", image)
 			platformToolCommand.Stderr = os.Stderr
-			err = platformToolCommand.Run()
+			err := platformToolCommand.Run()
 			if err != nil {
 				errorln("Failed to flash altOS on device " + device)
 				return
 			}
-			if altosKey != "" {
+			if altosKey != "" && getVar("nos-production", device) == "yes" {
 				fmt.Println("Locking device " + device + " bootloader...")
 				// Erase avb_custom_key, if it returns an error it just means that it's already erased (or from factory)
 				// so we can proceed.
