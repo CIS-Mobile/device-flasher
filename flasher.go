@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math"
 	"net/http"
 	"os"
@@ -159,6 +160,7 @@ func getPlatformTools() error {
 		}
 		err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
 	}
+
 	// Set ANDROID_PRODUCT_OUT to the path of platform-tools. Since v34.0.1 flashing an updatepackage will fail
 	// without doing this first.
 	err = os.Setenv("ANDROID_PRODUCT_OUT", platformToolsPath)
@@ -260,9 +262,13 @@ func flashDevices(devices []string) {
 		wg.Add(1)
 		go func(device string) {
 			defer wg.Done()
+
+			// Reboot into bootloader so we can flash firmware, if it's not there already.
 			platformToolCommand := *adb
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot", "bootloader")
 			_ = platformToolCommand.Run()
+
+			// Unlock bootloader so we can flash the firmware.
 			fmt.Println("Unlocking device " + device + " bootloader...")
 			fmt.Println("Please use the volume and power keys on the device to confirm.")
 			for i := 0; getVar("unlocked", device) != "yes"; i++ {
@@ -275,54 +281,94 @@ func flashDevices(devices []string) {
 					return
 				}
 			}
-			platformToolCommand = *fastboot
-			err := errors.New("")
+
 			fmt.Println("Flashing altOS on device " + device + "...")
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
-			platformToolCommand.Stderr = os.Stderr
-			err = platformToolCommand.Run()
-			if err != nil {
-				errorln("Failed to flash stock bootloader on device " + device)
-				return
-			}
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
-			_ = platformToolCommand.Run()
-			// Sleep for 20 seconds until bootloader has rebooted.
-			// FIXME: Fastboot can't detect when the device is back up on M1 Macs and will
-			//        hang forever wait a full 20 seconds so we know the device is back up.
-			if runtime.GOOS == "darwin" {
-				time.Sleep(20 * time.Second)
+
+			// Flash bootloader & radio (these partitions only exist on Pixel devices).
+			if getVar("nos-production", device) == "yes" {
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
+				platformToolCommand.Stderr = os.Stderr
+				err := platformToolCommand.Run()
+				if err != nil {
+					errorln("Failed to flash stock bootloader on device " + device)
+					return
+				}
+
+				// Reboot to bootloader following flashing bootloader.
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+				_ = platformToolCommand.Run()
+
+				// Sleep for 20 seconds until bootloader has rebooted.
+				// FIXME: Fastboot can't detect when the device is back up on M1 Macs and will
+				//        hang forever wait a full 20 seconds so we know the device is back up.
+				if runtime.GOOS == "darwin" {
+					time.Sleep(20 * time.Second)
+				} else {
+					time.Sleep(5 * time.Second)
+				}
+
+				// Flash radio.
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
+				platformToolCommand.Stderr = os.Stderr
+				err = platformToolCommand.Run()
+				if err != nil {
+					errorln("Failed to flash stock radio on device " + device)
+					return
+				}
+
+				// Reboot to bootloader following flashing radio.
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+				_ = platformToolCommand.Run()
+
+				// Sleep for 20 seconds until bootloader has rebooted.
+				// FIXME: Fastboot can't detect when the device is back up on M1 Macs and will
+				//        hang forever wait a full 20 seconds so we know the device is back up.
+				if runtime.GOOS == "darwin" {
+					time.Sleep(20 * time.Second)
+				} else {
+					time.Sleep(5 * time.Second)
+				}
 			} else {
-				time.Sleep(5 * time.Second)
+				// Specify the directory containing the .img files
+				firmwareDir := factoryZip + "RADIO/"
+
+				// Get a list of all .img files in the directory
+				files, err := ioutil.ReadDir(firmwareDir)
+				if err != nil {
+					log.Fatalf("Failed to read directory: %v", err)
+				}
+
+				// Loop through each file under RADIO/ and flash it.
+				for _, file := range files {
+					if filepath.Ext(file.Name()) == ".img" {
+						fileBaseName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+						platformToolCommand = *fastboot
+						platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", fileBaseName, firmwareDir + file.Name())
+						platformToolCommand.Stderr = os.Stderr
+						err = platformToolCommand.Run()
+						if err != nil {
+							errorln("Failed to flash partition " + fileBaseName + " on device " + device)
+							return
+						}
+					}
+				}
 			}
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
-			platformToolCommand.Stderr = os.Stderr
-			err = platformToolCommand.Run()
-			if err != nil {
-				errorln("Failed to flash stock radio on device " + device)
-				return
-			}
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
-			_ = platformToolCommand.Run()
-			// Sleep for 20 seconds until bootloader has rebooted.
-			// FIXME: Fastboot can't detect when the device is back up on M1 Macs and will
-			//        hang forever wait a full 20 seconds so we know the device is back up.
-			if runtime.GOOS == "darwin" {
-				time.Sleep(20 * time.Second)
-			} else {
-				time.Sleep(5 * time.Second)
-			}
+
+			// Flash the updatepackage included in factory image.
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", image)
 			platformToolCommand.Stderr = os.Stderr
-			err = platformToolCommand.Run()
+			err := platformToolCommand.Run()
 			if err != nil {
-				errorln("Failed to flash altOS on device " + device)
+				errorln("Failed to flash updatepackage on device " + device)
 				return
 			}
+
+			// Wipe userdata & metadata now that the firmware has been flashed.
 			fmt.Println("Wiping userdata for device " + device + "...")
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "-w", "reboot-bootloader")
@@ -331,7 +377,9 @@ func flashDevices(devices []string) {
 				errorln("Failed to wipe userdata for device " + device)
 				return
 			}
-			if altosKey != "" {
+
+			// Flash our public key to avb_custom_key so we can boot yellow.
+			if altosKey != "" && getVar("nos-production", device) == "yes" {
 				fmt.Println("Locking device " + device + " bootloader...")
 				platformToolCommand := *fastboot
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
@@ -361,6 +409,8 @@ func flashDevices(devices []string) {
 					}
 				}
 			}
+
+			// Flashing done! Reboot to userspace.
 			fmt.Println("Rebooting " + device + "...")
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot")
