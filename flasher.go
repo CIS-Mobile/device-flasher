@@ -246,25 +246,6 @@ func getPrerequisiteFiles() {
 	}
 }
 
-func getDeviceName(devices []string) string {
-	deviceName := getVar("product", devices[0])
-
-	return deviceName
-}
-
-func isDeviceNonAVB(devices []string, deviceName string) bool {
-	listNonAVBdeviceNames := [...]string{"marlin"}
-
-	foundDevice := false
-	for i := 0; (i < len(listNonAVBdeviceNames)) && (foundDevice == false); i++ {
-		if listNonAVBdeviceNames[i] == deviceName {
-			foundDevice = true
-		}
-	}
-
-	return foundDevice
-}
-
 func flashDevices(devices []string) {
 	var wg sync.WaitGroup
 	for _, device := range devices {
@@ -334,21 +315,9 @@ func flashDevices(devices []string) {
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
 				err := platformToolCommand.Run()
 				if err != nil {
-					// failed to erase, this is expected for non-AVB devices
-					deviceName := getDeviceName(devices)
-					if deviceName == "" {
-						// unable to tell if it is a non-AVB device or not, raise an error and exit
-						errorln("Failed to erase avb_custom_key for device " + device)
-						return
-					} else {
-						if isDeviceNonAVB(devices, deviceName) == false {
-							// the device is an AVB device, raise an error and exit
-							errorln("Failed to erase avb_custom_key for device " + device)
-							return
-						} else {
-							// the device is a non-AVB device, we can skip flashing the avb_custom_key and carry on
-						}
-					}
+					// Failed to erase, this is expected for devices coming straight out of the factory that have never
+					// been flashed with an AVB custom key before. Proceed, but let the user know.
+					errorln("The AVB custom key is empty and cannot be erased, proceeding.")
 				} else {
 					platformToolCommand = *fastboot
 					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
