@@ -107,6 +107,10 @@ func main() {
 	device = getProp("ro.product.device", devices[0])
 	if device == "" {
 		device = getVar("product", devices[0])
+		platform := getVar("product", devices[0])
+		if platform == "sdm660" {
+			device = "zx10"
+		}
 		if device == "" {
 			fatalln(errors.New("Cannot determine device model. Exiting..."))
 		}
@@ -333,6 +337,18 @@ func flashDevices(devices []string) {
 					time.Sleep(5 * time.Second)
 				}
 			} else {
+				// Flash RADIO partitions on the Getac ZX10. This device does not allow flashing critical
+				// from within bootloader so we have to boot into fastbootd first, then go back to bootloader.
+				if getVar("product", device) == "sdm660" {
+					platformToolCommand = *fastboot
+					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-fastboot")
+					err := platformToolCommand.Run()
+					if err != nil {
+						errorln("Failed to reboot to fastbootd on " + device)
+						return
+					}
+				}
+
 				// Specify the directory containing the .img files
 				firmwareDir := factoryZip + "RADIO/"
 
@@ -356,6 +372,18 @@ func flashDevices(devices []string) {
 						}
 					}
 				}
+
+				// Now that we've flashed firmware on the Getac ZX10 we can reboot back into bootloader for updatepackage.
+				if getVar("product", device) == "zx10" {
+					fmt.Println("Wiping userdata and rebooting back to bootloader for device " + device + "...")
+					platformToolCommand = *fastboot
+					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "-w", "reboot-bootloader")
+					err := platformToolCommand.Run()
+					if err != nil {
+						errorln("Failed to wipe userdata for device " + device)
+						return
+					}
+				}
 			}
 
 			// Flash the updatepackage included in factory image.
@@ -369,13 +397,15 @@ func flashDevices(devices []string) {
 			}
 
 			// Wipe userdata & metadata now that the firmware has been flashed.
-			fmt.Println("Wiping userdata for device " + device + "...")
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "-w", "reboot-bootloader")
-			err = platformToolCommand.Run()
-			if err != nil {
-				errorln("Failed to wipe userdata for device " + device)
-				return
+			if getVar("product", device) != "sdm660" {
+				fmt.Println("Wiping userdata for device " + device + "...")
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "-w", "reboot-bootloader")
+				err = platformToolCommand.Run()
+				if err != nil {
+					errorln("Failed to wipe userdata for device " + device)
+					return
+				}
 			}
 
 			// Flash our public key to avb_custom_key so we can boot yellow.
