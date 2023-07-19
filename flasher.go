@@ -31,7 +31,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	"github.com/gookit/color"
 )
 
@@ -288,14 +287,7 @@ func flashDevices(devices []string) {
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
 			_ = platformToolCommand.Run()
-			// Sleep for 20 seconds until bootloader has rebooted.
-			// FIXME: Fastboot can't detect when the device is back up on M1 Macs and will
-			//        hang forever wait a full 20 seconds so we know the device is back up.
-			if runtime.GOOS == "darwin" {
-				time.Sleep(20 * time.Second)
-			} else {
-				time.Sleep(5 * time.Second)
-			}
+			time.Sleep(5 * time.Second)
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
 			platformToolCommand.Stderr = os.Stderr
@@ -307,14 +299,7 @@ func flashDevices(devices []string) {
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
 			_ = platformToolCommand.Run()
-			// Sleep for 20 seconds until bootloader has rebooted.
-			// FIXME: Fastboot can't detect when the device is back up on M1 Macs and will
-			//        hang forever wait a full 20 seconds so we know the device is back up.
-			if runtime.GOOS == "darwin" {
-				time.Sleep(20 * time.Second)
-			} else {
-				time.Sleep(5 * time.Second)
-			}
+			time.Sleep(5 * time.Second)
 			platformToolCommand = *fastboot
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", image)
 			platformToolCommand.Stderr = os.Stderr
