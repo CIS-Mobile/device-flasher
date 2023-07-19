@@ -1,4 +1,4 @@
-VERSION=1.3.2
+VERSION=$(shell git describe --abbrev=0 --tags)
 
 GIT_COMMIT := $(shell git rev-list -1 HEAD)
 
