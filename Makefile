@@ -1,4 +1,4 @@
-VERSION=1.3.2
+VERSION=1.3.3
 
 GIT_COMMIT := $(shell git rev-list -1 HEAD)
 
