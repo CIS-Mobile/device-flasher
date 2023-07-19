@@ -294,38 +294,28 @@ func flashDevices(devices []string) {
 			_ = platformToolCommand.Run()
 			time.Sleep(5 * time.Second)
 			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "update", image)
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--skip-reboot", "-w", "update", image)
 			platformToolCommand.Stderr = os.Stderr
 			err = platformToolCommand.Run()
 			if err != nil {
 				errorln("Failed to flash altOS on device " + device)
 				return
 			}
-			fmt.Println("Wiping userdata for device " + device + "...")
-			platformToolCommand = *fastboot
-			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "-w", "reboot-bootloader")
-			err = platformToolCommand.Run()
-			if err != nil {
-				errorln("Failed to wipe userdata for device " + device)
-				return
-			}
 			if altosKey != "" {
 				fmt.Println("Locking device " + device + " bootloader...")
+				// Erase avb_custom_key, if it returns an error it just means that it's already erased (or from factory)
+				// so we can proceed.
 				platformToolCommand := *fastboot
 				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
-				err := platformToolCommand.Run()
+				_ = platformToolCommand.Run()
+
+				// Flash avb_custom_key.
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
+				err = platformToolCommand.Run()
 				if err != nil {
-					// Failed to erase, this is expected for devices coming straight out of the factory that have never
-					// been flashed with an AVB custom key before. Proceed, but let the user know.
-					errorln("The AVB custom key is empty and cannot be erased, proceeding.")
-				} else {
-					platformToolCommand = *fastboot
-					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
-					err = platformToolCommand.Run()
-					if err != nil {
-						errorln("Failed to flash avb_custom_key for device " + device)
-						return
-					}
+					errorln("Failed to flash avb_custom_key for device " + device)
+					return
 				}
 				fmt.Println("Please use the volume and power keys on the device to confirm.")
 				for i := 0; getVar("unlocked", device) != "no"; i++ {
