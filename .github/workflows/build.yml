@@ -1,0 +1,45 @@
+name: device-flasher
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: macos-13
+    permissions: write-all
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.20.x'
+
+    - name: Build
+      run: |
+          go mod init cissecure.com/device-flasher
+          go mod tidy
+          make all
+          zip altos-flasher-$GITHUB_REF_NAME.zip avb-rsa-4096_pkmd.bin altOS*
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: ${{ github.ref }}
+
+    - name: Upload Release Asset
+      id: upload_release_asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./altos-flasher-${{ github.ref_name }}.zip
+        asset_name: altos-flasher-${{ github.ref_name }}.zip
+        asset_content_type: application/zip
