@@ -6,7 +6,7 @@
 !*.go
 !Makefile
 !build.bat
-!README.txt
+!README.md
 !LICENSE
 !tools
 !tools/*
