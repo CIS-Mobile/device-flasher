@@ -15,7 +15,7 @@ else
 endif
 
 build_linux:
-	GO111MODULE=auto GOOS=linux GOARCH=amd64 go build -o "altOS-flasher_linux-x86_64" -ldflags "-X main.version=$(VERSION) -X 'main.gitCommit=$(GIT_COMMIT)'" .
+	GO111MODULE=auto GOOS=linux CGO_ENABLED=0 GOARCH=amd64 go build -o "altOS-flasher_linux-x86_64" -ldflags "-X main.version=$(VERSION) -X 'main.gitCommit=$(GIT_COMMIT)'" .
 #TODO: Re-enable this when Google builds adb and fastboot for arm64
 #	GO111MODULE=auto GOOS=linux GOARCH=arm64 go build -o "altOS-flasher_linux-arm64" -ldflags "-X main.version=$(VERSION) -X 'main.gitCommit=$(GIT_COMMIT)'" .
 
