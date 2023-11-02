@@ -339,21 +339,23 @@ func flashDevices(devices []string) {
 				errorln("Failed to flash altOS on device " + device)
 				return
 			}
-			if altosKey != "" && getVar("nos-production", device) == "yes" {
-				fmt.Println("Locking device " + device + " bootloader...")
-				// Erase avb_custom_key, if it returns an error it just means that it's already erased (or from factory)
-				// so we can proceed.
-				platformToolCommand := *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
-				_ = platformToolCommand.Run()
+			if altosKey != "" {
+				if getVar("product", device) != "sentry" {
+					fmt.Println("Locking device " + device + " bootloader...")
+					// Erase avb_custom_key, if it returns an error it just means that it's already erased (or from factory)
+					// so we can proceed.
+					platformToolCommand := *fastboot
+					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "erase", "avb_custom_key")
+					_ = platformToolCommand.Run()
 
-				// Flash avb_custom_key.
-				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
-				err = platformToolCommand.Run()
-				if err != nil {
-					errorln("Failed to flash avb_custom_key for device " + device)
-					return
+					// Flash avb_custom_key.
+					platformToolCommand = *fastboot
+					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "avb_custom_key", altosKey)
+					err = platformToolCommand.Run()
+					if err != nil {
+						errorln("Failed to flash avb_custom_key for device " + device)
+						return
+					}
 				}
 				fmt.Println("Please use the volume and power keys on the device to confirm.")
 				for i := 0; getVar("unlocked", device) != "no"; i++ {
