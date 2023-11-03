@@ -43,7 +43,7 @@ var executable, _ = os.Executable()
 var cwd = filepath.Dir(executable)
 
 const OS = runtime.GOOS
-const PLATFORM_TOOLS_ZIP = "platform-tools_r34.0.4-" + OS + ".zip"
+const PLATFORM_TOOLS_ZIP = "platform-tools_r34.0.5-" + OS + ".zip"
 
 var adb *exec.Cmd
 var fastboot *exec.Cmd
