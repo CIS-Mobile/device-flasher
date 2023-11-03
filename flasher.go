@@ -43,7 +43,7 @@ var executable, _ = os.Executable()
 var cwd = filepath.Dir(executable)
 
 const OS = runtime.GOOS
-const PLATFORM_TOOLS_ZIP = "platform-tools_r34.0.4-" + OS + ".zip"
+const PLATFORM_TOOLS_ZIP = "platform-tools_r34.0.5-" + OS + ".zip"
 
 var adb *exec.Cmd
 var fastboot *exec.Cmd
@@ -339,6 +339,13 @@ func flashDevices(devices []string) {
 				errorln("Failed to flash altOS on device " + device)
 				return
 			}
+
+			// Reboot to bootloader after we're done flashing, fastbootd cannot lock bootloader.
+			platformToolCommand = *fastboot
+			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+			_ = platformToolCommand.Run()
+			time.Sleep(5 * time.Second)
+
 			if altosKey != "" {
 				if getVar("product", device) != "sentry" {
 					fmt.Println("Locking device " + device + " bootloader...")
