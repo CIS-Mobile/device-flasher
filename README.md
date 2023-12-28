@@ -1,19 +1,19 @@
 # Dependencies
 macOS:
 ```
-brew install go
+brew install git go
 ```
 Ubuntu:
 ```
-sudo apt install golang
+sudo apt install git golang
 ```
 Fedora:
 ```
-sudo dnf install go
+sudo dnf install git go
 ```
 Windows
 ```
-winget install --id=GoLang.Go  -e
+winget install Git.Git GoLang.Go
 ```
 
 # Compile
