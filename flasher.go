@@ -52,6 +52,7 @@ var input string
 
 var altosKey string
 var factoryZip string
+var otaZip string
 var bootloader string
 var radio string
 var image string
@@ -113,26 +114,32 @@ func main() {
 		}
 	}
 	getPrerequisiteFiles()
-	err = extractZip(path.Base(factoryZip), cwd)
-	if err != nil {
-		errorln("Cannot continue without the device factory image. Exiting...")
-		fatalln(err)
-	}
-	factoryZip = factoryZip[0:strings.Index(factoryZip, "-factory")]
-	factoryZip = cwd + string(os.PathSeparator) + factoryZip + string(os.PathSeparator)
-	files, err := ioutil.ReadDir(factoryZip)
-	if err != nil {
-		errorln("Cannot continue without the device factory image. Exiting...")
-		fatalln(err)
-	}
-	for _, file := range files {
-		file := file.Name()
-		if strings.Contains(file, "bootloader") {
-			bootloader = factoryZip + file
-		} else if strings.Contains(file, "radio") {
-			radio = factoryZip + file
-		} else if strings.Contains(file, "image") {
-			image = factoryZip + file
+	if len(os.Args) <= 1 || os.Args[1] != "--ota" {
+		err = extractZip(path.Base(factoryZip), cwd)
+		if err != nil {
+			errorln("Cannot continue without the device factory image. Exiting...")
+			fatalln(err)
+		}
+		factoryZip = factoryZip[0:strings.Index(factoryZip, "-factory")]
+		factoryZip = cwd + string(os.PathSeparator) + factoryZip + string(os.PathSeparator)
+		files, err := ioutil.ReadDir(factoryZip)
+		if err != nil {
+			errorln("Cannot continue without the device factory image. Exiting...")
+			fatalln(err)
+		}
+		for _, file := range files {
+			file := file.Name()
+			if strings.Contains(file, "bootloader") {
+				bootloader = factoryZip + file
+			} else if strings.Contains(file, "radio") {
+				radio = factoryZip + file
+			} else if strings.Contains(file, "image") {
+				image = factoryZip + file
+			}
+		}
+	} else {
+		if otaZip == "" {
+			fatalln(errors.New("Cannot continue without the device OTA image. Exiting..."))
 		}
 	}
 	flashDevices(devices)
@@ -240,8 +247,11 @@ func getPrerequisiteFiles() {
 	for _, file := range files {
 		file := file.Name()
 		if strings.Contains(file, strings.ToLower(device)) && strings.HasSuffix(file, ".zip") {
-			if strings.Contains(file, "factory") {
+			if strings.Contains(file, "-factory-") {
 				factoryZip = file
+			}
+			if strings.Contains(file, "-ota-") {
+				otaZip = file
 			}
 		} else if strings.HasSuffix(file, ".bin") {
 			altosKey = file
@@ -258,19 +268,47 @@ func flashDevices(devices []string) {
 			platformToolCommand := *adb
 			platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot", "bootloader")
 			_ = platformToolCommand.Run()
-			fmt.Println("Unlocking device " + device + " bootloader...")
-			fmt.Println("Please use the volume and power keys on the device to confirm.")
-			for i := 0; getVar("unlocked", device) != "yes"; i++ {
-				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
-				_ = platformToolCommand.Start()
-				time.Sleep(30 * time.Second)
-				if i >= 2 {
-					errorln("Failed to unlock device " + device + " bootloader")
-					return
+
+			if len(os.Args) <= 1 || os.Args[1] != "--ota" {
+				fmt.Println("Unlocking device " + device + " bootloader...")
+				fmt.Println("Please use the volume and power keys on the device to confirm.")
+				for i := 0; getVar("unlocked", device) != "yes"; i++ {
+					platformToolCommand = *fastboot
+					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flashing", "unlock")
+					_ = platformToolCommand.Start()
+					time.Sleep(30 * time.Second)
+					if i >= 2 {
+						errorln("Failed to unlock device " + device + " bootloader")
+						return
+					}
 				}
 			}
-			fmt.Println("Flashing altOS on device " + device + "...")
+			fmt.Println("Flashing altOS on device " + device + "...\n")
+
+			if len(os.Args) > 1 && os.Args[1] == "--ota" {
+				// Reboot to recovery in sideload mode.
+				platformToolCommand = *fastboot
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot", "recovery")
+				_ = platformToolCommand.Start()
+
+				fmt.Println("\nPlease use the volume and power keys on the device to select 'Apply update from ADB'")
+				color.Yellowln("Note, if you see the Android logo on it's back, please hold the 'power' button, and\nquickly press the 'volume up' key to enter the recovery menu.")
+
+				// Wait for the device to show up in sideload mode.
+				platformToolCommand = *adb
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "wait-for-sideload")
+				_ = platformToolCommand.Run()
+
+				// Provide the OTA.
+				color.Greenp("Flashing " + otaZip + " on " + device + "...")
+				platformToolCommand = *adb
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "sideload", otaZip)
+				err := platformToolCommand.Run()
+				if err != nil {
+					errorln("\nFailed to sideload OTA image on device " + device)
+				}
+				return
+			}
 
 			// Flash bootloader & radio (these partitions only exist on Pixel devices).
 			if getVar("nos-production", device) == "yes" {
@@ -384,7 +422,7 @@ func flashDevices(devices []string) {
 		}(device)
 	}
 	wg.Wait()
-	fmt.Println("Bulk flashing complete")
+	fmt.Println("\nBulk flashing complete")
 }
 
 func killAdb() {
