@@ -22,6 +22,14 @@ go mod init cissecure.com/device-flasher
 go mod tidy
 make
 ```
+Windows:
+```
+./build.ps1
+```
+Linux/macOS:
+```
+make
+```
 
 # Usage
 Plug each device of the same model to a USB port on the machine the program is running from.

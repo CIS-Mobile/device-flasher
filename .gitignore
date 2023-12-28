@@ -5,7 +5,7 @@
 !.gitmodules
 !*.go
 !Makefile
-!build.bat
+!build.ps1
 !README.md
 !LICENSE
 !tools
