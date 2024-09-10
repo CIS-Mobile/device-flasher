@@ -313,7 +313,7 @@ func flashDevices(devices []string) {
 			// Flash bootloader & radio (these partitions only exist on Pixel devices).
 			if getVar("nos-production", device) == "yes" {
 				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "bootloader", bootloader)
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "bootloader", bootloader)
 				platformToolCommand.Stderr = os.Stderr
 				err := platformToolCommand.Run()
 				if err != nil {
@@ -330,7 +330,7 @@ func flashDevices(devices []string) {
 
 				// Flash radio.
 				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", "radio", radio)
+				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "radio", radio)
 				platformToolCommand.Stderr = os.Stderr
 				err = platformToolCommand.Run()
 				if err != nil {
@@ -358,7 +358,7 @@ func flashDevices(devices []string) {
 					if filepath.Ext(file.Name()) == ".img" {
 						fileBaseName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
 						platformToolCommand = *fastboot
-						platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "--slot", "all", "flash", fileBaseName, firmwareDir+file.Name())
+						platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", fileBaseName, firmwareDir+file.Name())
 						platformToolCommand.Stderr = os.Stderr
 						err = platformToolCommand.Run()
 						if err != nil {
