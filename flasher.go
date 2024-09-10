@@ -353,6 +353,12 @@ func flashDevices(devices []string) {
 					log.Fatalf("Failed to read directory: %v", err)
 				}
 
+				if getVar("product", device) == "zx10" {
+					platformToolCommand = *fastboot
+					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-fastboot")
+					_ = platformToolCommand.Run()
+				}
+
 				// Loop through each file under RADIO/ and flash it.
 				for _, file := range files {
 					if filepath.Ext(file.Name()) == ".img" {
@@ -367,6 +373,13 @@ func flashDevices(devices []string) {
 						}
 					}
 				}
+
+				if getVar("product", device) == "zx10" {
+					platformToolCommand = *fastboot
+					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "reboot-bootloader")
+					_ = platformToolCommand.Run()
+				}
+
 			}
 
 			// Flash the updatepackage included in factory image.
