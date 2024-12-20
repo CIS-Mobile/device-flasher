@@ -329,13 +329,15 @@ func flashDevices(devices []string) {
 				time.Sleep(5 * time.Second)
 
 				// Flash radio.
-				platformToolCommand = *fastboot
-				platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "radio", radio)
-				platformToolCommand.Stderr = os.Stderr
-				err = platformToolCommand.Run()
-				if err != nil {
-					errorln("Failed to flash stock radio on device " + device)
-					return
+				if getVar("product", device) != "tangorpro" {
+					platformToolCommand = *fastboot
+					platformToolCommand.Args = append(platformToolCommand.Args, "-s", device, "flash", "radio", radio)
+					platformToolCommand.Stderr = os.Stderr
+					err = platformToolCommand.Run()
+					if err != nil {
+						errorln("Failed to flash stock radio on device " + device)
+						return
+					}
 				}
 
 				// Reboot to bootloader following flashing radio.
