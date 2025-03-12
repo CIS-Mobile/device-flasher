@@ -394,8 +394,8 @@ func flashDevices(devices []string) {
 			time.Sleep(5 * time.Second)
 
 			if altosKey != "" {
+				fmt.Println("Locking device " + device + " bootloader...")
 				if getVar("product", device) != "sentry" {
-					fmt.Println("Locking device " + device + " bootloader...")
 					// Erase avb_custom_key, if it returns an error it just means that it's already erased (or from factory)
 					// so we can proceed.
 					platformToolCommand := *fastboot
