@@ -43,7 +43,6 @@ var executable, _ = os.Executable()
 var cwd = filepath.Dir(executable)
 
 const OS = runtime.GOOS
-const PLATFORM_TOOLS_ZIP = "platform-tools_r36.0.2-" + OS + ".zip"
 
 var adb *exec.Cmd
 var fastboot *exec.Cmd
@@ -146,6 +145,12 @@ func main() {
 }
 
 func getPlatformTools() error {
+	var toolsOs = OS
+	if OS  == "windows" {
+		toolsOs = "win"
+	}
+	var platformToolsZip = "platform-tools_r36.0.2-" + toolsOs + ".zip"
+
 	platformToolsPath := cwd + string(os.PathSeparator) + "platform-tools" + string(os.PathSeparator)
 	adbPath := platformToolsPath + "adb"
 	fastbootPath := platformToolsPath + "fastboot"
@@ -159,14 +164,14 @@ func getPlatformTools() error {
 	if err == nil {
 		killAdb()
 	}
-	err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
+	err = extractZip(platformToolsZip, cwd)
 	if err != nil {
-		fmt.Println("There are missing Android platform tools in PATH. Attempting to download https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
-		err = downloadFile("https://dl.google.com/android/repository/" + PLATFORM_TOOLS_ZIP)
+		fmt.Println("There are missing Android platform tools in PATH. Attempting to download https://dl.google.com/android/repository/" + platformToolsZip)
+		err = downloadFile("https://dl.google.com/android/repository/" + platformToolsZip)
 		if err != nil {
 			return err
 		}
-		err = extractZip(PLATFORM_TOOLS_ZIP, cwd)
+		err = extractZip(platformToolsZip, cwd)
 	}
 	return err
 }
