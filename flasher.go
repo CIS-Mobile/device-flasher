@@ -105,7 +105,7 @@ func main() {
 		fatalln(errors.New("No device connected. Exiting..."))
 	}
 	fmt.Println("Detected " + strconv.Itoa(len(devices)) + " devices: " + strings.Join(devices, ", "))
-	device = getProp("ro.product.device", devices[0])
+	device = getProp("ro.product.board", devices[0])
 	if device == "" {
 		device = getVar("product", devices[0])
 		if device == "" {
