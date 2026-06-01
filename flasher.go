@@ -149,7 +149,7 @@ func getPlatformTools() error {
 	if OS  == "windows" {
 		toolsOs = "win"
 	}
-	var platformToolsZip = "platform-tools_r36.0.2-" + toolsOs + ".zip"
+	var platformToolsZip = "platform-tools_r37.0.0-" + toolsOs + ".zip"
 
 	platformToolsPath := cwd + string(os.PathSeparator) + "platform-tools" + string(os.PathSeparator)
 	adbPath := platformToolsPath + "adb"
