@@ -427,6 +427,8 @@ func flashDevices(devices []string) {
 						return
 					}
 				}
+			} else {
+				color.Yellowln("avb-rsa-4096_pkmd.bin is not present in flasher directory, not locking bootloader")
 			}
 			fmt.Println("Rebooting " + device + "...")
 			platformToolCommand = *fastboot
