@@ -92,7 +92,7 @@ func main() {
 		fatalln(err)
 	}
 	fmt.Println("Perform the following steps for each device you want to flash:")
-	fmt.Println("Connect to a Wi-Fi network and ensure that no SIM cards are installed")
+	fmt.Println("Connect to a Wi-Fi network and ensure that no SIMs or eSIMs are installed")
 	fmt.Println("\nEnable developer options and enable USB debugging following the below documentation:")
 	color.Yellowln("https://developer.android.com/studio/debug/dev-options#enable")
 	color.Yellowln("https://developer.android.com/studio/debug/dev-options#Enable-debugging\n")
